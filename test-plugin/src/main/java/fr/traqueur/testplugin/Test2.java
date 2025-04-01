@@ -5,7 +5,7 @@ import fr.traqueur.config.Configurable;
 import java.util.List;
 import java.util.Map;
 
-public enum Test2 implements Configurable<Test2> {
+public enum Test2 implements Configurable {
 
     OBJ_1,
     ;

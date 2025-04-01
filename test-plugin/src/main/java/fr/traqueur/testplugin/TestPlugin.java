@@ -19,7 +19,7 @@ public final class TestPlugin extends JavaPlugin {
             this.saveResource("test2.yml", false);
         }
 
-        Injector injector = new Injector();
+        Injector injector = Injector.get();
         injector.injectEnum(test, Test1.class);
         injector.injectEnum(test2, Test2.class);
 
