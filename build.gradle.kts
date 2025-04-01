@@ -16,7 +16,7 @@ dependencies {
     compileOnly("org.yaml:snakeyaml:2.4")
 }
 
-val targetJavaVersion = 8
+val targetJavaVersion = 21
 java {
     val javaVersion = JavaVersion.toVersion(targetJavaVersion)
     sourceCompatibility = javaVersion
