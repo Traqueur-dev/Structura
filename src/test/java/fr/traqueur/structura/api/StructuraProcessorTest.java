@@ -12,7 +12,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@DisplayName("StructuraProcessor - Tests unitaires")
+@DisplayName("StructuraProcessor - Tests")
 class StructuraProcessorTest {
 
     private StructuraProcessor processor;
@@ -283,11 +283,11 @@ class StructuraProcessorTest {
     }
 
     @Nested
-    @DisplayName("Gestion d'erreurs")
+    @DisplayName("Error Handling")
     class ErrorHandlingTest {
 
         @Test
-        @DisplayName("Devrait lever une exception pour YAML invalide")
+        @DisplayName("Should throw exception for invalid YAML format")
         void shouldThrowExceptionForInvalidYaml() {
             String yaml = """
                 name: "test
@@ -300,7 +300,7 @@ class StructuraProcessorTest {
         }
 
         @Test
-        @DisplayName("Devrait lever une exception pour YAML null")
+        @DisplayName("Should throw exception for missing required fields")
         void shouldThrowExceptionForNullYaml() {
             StructuraException exception = assertThrows(StructuraException.class, () -> {
                 processor.parse(null, SimpleConfig.class);
@@ -310,7 +310,7 @@ class StructuraProcessorTest {
         }
 
         @Test
-        @DisplayName("Devrait lever une exception pour classe null")
+        @DisplayName("Should throw exception for null class")
         void shouldThrowExceptionForNullClass() {
             String yaml = "name: test";
 
@@ -322,7 +322,7 @@ class StructuraProcessorTest {
         }
 
         @Test
-        @DisplayName("Devrait lever une exception pour YAML vide")
+        @DisplayName("Should throw exception for empty YAML string")
         void shouldThrowExceptionForEmptyYaml() {
             StructuraException exception = assertThrows(StructuraException.class, () -> {
                 processor.parse("", SimpleConfig.class);

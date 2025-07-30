@@ -57,6 +57,8 @@ public class DefaultValueRegistry {
      * @param annotationType The annotation type that will be used to extract the default value.
      * @param valueExtractor A function that extracts the default value from the annotation.
      *                       It should take an instance of the annotation and return the default value.
+     * @param <T> The type of the default value to be extracted.
+     * @param <A> The type of the annotation that contains the default value.
      */
     public <T, A extends Annotation> void register(Class<T> targetType, Class<A> annotationType, Function<A, T> valueExtractor) {
         handlers.computeIfAbsent(targetType, k -> new ConcurrentHashMap<>())

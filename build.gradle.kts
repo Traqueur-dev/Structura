@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "fr.traqueur"
-version = "1.0-SNAPSHOT"
+version = property("version")!!
 
 repositories {
     mavenCentral()

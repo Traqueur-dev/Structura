@@ -12,5 +12,10 @@ import java.lang.annotation.Target;
 @Target({ElementType.PARAMETER, ElementType.FIELD, ElementType.RECORD_COMPONENT})
 @Retention(RetentionPolicy.RUNTIME)
 public @interface DefaultLong {
+    /**
+     * The default long value.
+     *
+     * @return the default long value
+     */
     long value();
 }

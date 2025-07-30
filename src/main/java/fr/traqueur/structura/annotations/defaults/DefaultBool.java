@@ -12,5 +12,11 @@ import java.lang.annotation.Target;
 @Target({ElementType.PARAMETER, ElementType.FIELD, ElementType.RECORD_COMPONENT})
 @Retention(RetentionPolicy.RUNTIME)
 public @interface DefaultBool {
+
+    /**
+     * The default boolean value.
+     *
+     * @return the default boolean value
+     */
     boolean value();
 }

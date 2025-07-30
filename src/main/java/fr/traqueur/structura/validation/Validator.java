@@ -14,6 +14,10 @@ import java.util.*;
  */
 public class Validator {
 
+    /**
+     * Singleton instance of the Validator.
+     * This instance can be used to validate records and enums.
+     */
     public static final Validator INSTANCE = new Validator();
 
     /**

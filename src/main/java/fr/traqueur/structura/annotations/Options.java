@@ -12,7 +12,27 @@ import java.lang.annotation.Target;
 @Target({ElementType.PARAMETER, ElementType.FIELD, ElementType.RECORD_COMPONENT})
 @Retention(RetentionPolicy.RUNTIME)
 public @interface Options {
+    /**
+     * Indicates whether the annotated field or parameter is a key.
+     * Defaults to false.
+     *
+     * @return true if it is a key, false otherwise
+     */
     boolean isKey() default false;
+
+    /**
+     * Specifies the name of the field or parameter.
+     * If not provided, the default is an empty string.
+     *
+     * @return the name of the field or parameter
+     */
     String name() default "";
+
+    /**
+     * Indicates whether the annotated field or parameter is optional.
+     * Defaults to false.
+     *
+     * @return true if it is optional, false otherwise
+     */
     boolean optional() default false;
 }

@@ -63,6 +63,14 @@ public class Structura {
         private boolean validateOnParse = true;
 
         /**
+         * Constructs a new {@link StructuraBuilder} with default settings.
+         * By default, validation is enabled during parsing.
+         */
+        public StructuraBuilder() {
+            // Default constructor
+        }
+
+        /**
          * Sets whether to validate the configuration during parsing.
          *
          * @param validate true to enable validation, false to disable it

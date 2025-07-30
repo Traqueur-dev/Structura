@@ -12,5 +12,10 @@ import java.lang.annotation.Target;
 @Target({ElementType.PARAMETER, ElementType.FIELD, ElementType.RECORD_COMPONENT})
 @Retention(RetentionPolicy.RUNTIME)
 public @interface DefaultInt {
+    /**
+     * The default integer value.
+     *
+     * @return the default integer value
+     */
     int value();
 }

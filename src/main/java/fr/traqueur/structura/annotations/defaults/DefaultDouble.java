@@ -12,5 +12,10 @@ import java.lang.annotation.Target;
 @Target({ElementType.PARAMETER, ElementType.FIELD, ElementType.RECORD_COMPONENT})
 @Retention(RetentionPolicy.RUNTIME)
 public @interface DefaultDouble {
+    /**
+     * The default double value.
+     *
+     * @return the default double value
+     */
     double value();
 }

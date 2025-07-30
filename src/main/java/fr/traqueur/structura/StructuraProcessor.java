@@ -29,6 +29,12 @@ public class StructuraProcessor {
     private final ReentrantReadWriteLock enumLock;
     private final Yaml yaml;
 
+    /**
+     * Constructs a StructuraProcessor with the specified validation setting.
+     * If validateOnParse is true, the processor will validate settings during parsing.
+     *
+     * @param validateOnParse Whether to validate settings on parse.
+     */
     public StructuraProcessor(boolean validateOnParse) {
         this.yaml = new Yaml();
         this.validateOnParse = validateOnParse;
@@ -49,6 +55,10 @@ public class StructuraProcessor {
         if (yamlString == null || yamlString.isEmpty()) {
             throw new StructuraException("YAML string cannot be null or empty");
         }
+        if (settingsClass == null) {
+            throw new StructuraException("Settings class cannot be null");
+        }
+
         Map<String, Object> settings = yaml.load(yamlString);
         T instance = settingsClass.cast(createInstance(settings, settingsClass, ""));
         if(validateOnParse) {
