@@ -13,39 +13,39 @@ public class Structura {
 
     private Structura() {}
 
-    public static <E extends Enum<E>> E parseEnum(String yamlContent, Class<E> enumClass) {
+    public static <E extends Enum<E> & Settings> void parseEnum(String yamlContent, Class<E> enumClass) {
         try {
-            return PROCESSOR.parseEnum(yamlContent, enumClass);
+            PROCESSOR.parseEnum(yamlContent, enumClass);
         } catch (Exception e) {
             throw new StructuraException("Erreur lors du parsing de l'enum", e);
         }
     }
 
-    public static <E extends Enum<E>> E loadEnum(Path filePath, Class<E> enumClass) {
+    public static <E extends Enum<E> & Settings> void loadEnum(Path filePath, Class<E> enumClass) {
         try {
             String content = Files.readString(filePath);
-            return parseEnum(content, enumClass);
+            parseEnum(content, enumClass);
         } catch (IOException e) {
             throw new StructuraException("Impossible de lire le fichier: " + filePath.toAbsolutePath(), e);
         }
     }
 
-    public static <E extends Enum<E>> E loadEnum(File file, Class<E> enumClass) {
+    public static <E extends Enum<E> & Settings> void loadEnum(File file, Class<E> enumClass) {
         try {
             String content = Files.readString(file.toPath());
-            return parseEnum(content, enumClass);
+            parseEnum(content, enumClass);
         } catch (IOException e) {
             throw new StructuraException("Impossible de lire le fichier: " + file.getAbsolutePath(), e);
         }
     }
 
-    public static <E extends Enum<E>> E loadEnumFromResource(String resourcePath, Class<E> enumClass) {
+    public static <E extends Enum<E> & Settings> void loadEnumFromResource(String resourcePath, Class<E> enumClass) {
         try (var stream = Structura.class.getResourceAsStream(resourcePath)) {
             if (stream == null) {
                 throw new StructuraException("Resource not found: " + resourcePath);
             }
             String content = new String(stream.readAllBytes());
-            return parseEnum(content, enumClass);
+            parseEnum(content, enumClass);
         } catch (IOException e) {
             throw new StructuraException("Unable to read ressource " + resourcePath, e);
         }

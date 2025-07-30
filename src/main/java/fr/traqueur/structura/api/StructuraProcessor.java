@@ -3,8 +3,6 @@ package fr.traqueur.structura.api;
 import fr.traqueur.structura.DefaultValueRegistry;
 import fr.traqueur.structura.api.annotations.Options;
 import fr.traqueur.structura.api.exceptions.StructuraException;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 import org.yaml.snakeyaml.Yaml;
 
 import java.lang.reflect.*;
@@ -34,39 +32,37 @@ public class StructuraProcessor {
      * @return L'instance Settings créée
      * @throws StructuraException Si la conversion échoue
      */
-    public <T extends Settings> T parse(String yamlString, @NotNull Class<T> settingsClass) {
+    public <T extends Settings> T parse(String yamlString, Class<T> settingsClass) {
         validateInput(yamlString, settingsClass);
 
         Map<String, Object> settings = yaml.load(yamlString);
         return settingsClass.cast(createInstance(settings, settingsClass, ""));
     }
 
-    public <E extends Enum<E>> E parseEnum(String yamlString, @NotNull Class<E> enumClass) {
+    public <E extends Enum<E> & Settings> void parseEnum(String yamlString, Class<E> enumClass) {
         Map<String, Object> settings = yaml.load(yamlString);
-        return injectIntoEnum(settings, enumClass);
-    }
-
-    public <E extends Enum<E>> E injectIntoEnum(Map<String, Object> data, Class<E> enumClass) {
-        // Récupérer toutes les constantes de l'enum
         E[] enumConstants = enumClass.getEnumConstants();
+
+        // Créer un mapping des noms kebab-case vers les constantes enum
         Map<String, E> enumByKebabCase = Arrays.stream(enumConstants)
                 .collect(Collectors.toMap(
                         e -> convertCamelCaseToKebabCase(e.name()),
                         e -> e
                 ));
 
-        // Rechercher la première enum qui a une clé correspondante dans les données
-        for (Map.Entry<String, Object> entry : data.entrySet()) {
-            String key = entry.getKey();
-            E enumConstant = enumByKebabCase.get(key);
+        for (Map.Entry<String, E> stringEEntry : enumByKebabCase.entrySet()) {
+            String kebabCaseName = stringEEntry.getKey();
+            E enumConstant = stringEEntry.getValue();
 
-            if (enumConstant != null) {
-                injectDataIntoEnum(enumConstant, entry.getValue());
-                return enumConstant;
+            if (!settings.containsKey(kebabCaseName)) {
+                throw new StructuraException("Missing data for enum constant: " + kebabCaseName);
             }
+            Object data = settings.get(kebabCaseName);
+            if (data == null) {
+                throw new StructuraException("Missing data for enum constant: " + kebabCaseName);
+            }
+            injectDataIntoEnum(enumConstant, data);
         }
-
-        throw new StructuraException("No matching enum constant found for keys: " + data.keySet());
     }
 
     private void injectDataIntoEnum(Enum<?> enumConstant, Object data) {
@@ -125,11 +121,11 @@ public class StructuraProcessor {
      * @throws StructuraException Si la création échoue
      */
     public Object createInstance(Map<String, Object> data, Class<?> recordClass, String prefix) {
-        validateRecordClass(recordClass);
-
+        if(!recordClass.isRecord()) {
+            throw new StructuraException("Class " + recordClass.getName() + " is not a record type");
+        }
         RecordComponent[] components = recordClass.getRecordComponents();
         Object[] constructorArgs = buildConstructorArguments(components, data, recordClass, prefix);
-
         return instantiateRecord(recordClass, constructorArgs);
     }
 
@@ -139,12 +135,6 @@ public class StructuraProcessor {
         }
         if (settingsClass == null) {
             throw new StructuraException("Settings class cannot be null");
-        }
-    }
-
-    private void validateRecordClass(Class<?> recordClass) {
-        if (!recordClass.isRecord()) {
-            throw new StructuraException("Class must be a record type: " + recordClass.getName());
         }
     }
 
@@ -334,6 +324,19 @@ public class StructuraProcessor {
             return value.toString();
         }
 
+        if (targetType.isEnum()) {
+            if (value instanceof String strValue) {
+                try {
+                    @SuppressWarnings("unchecked")
+                    Class<Enum> enumClass = (Class<Enum>) targetType;
+                    return Enum.valueOf(enumClass, strValue.toUpperCase());
+                } catch (IllegalArgumentException e) {
+                    throw new StructuraException("Invalid enum value: " + strValue + " for type: " + targetType.getName(), e);
+                }
+            }
+            throw new StructuraException("Cannot convert " + value.getClass().getName() + " to enum type: " + targetType.getName());
+        }
+
         if (targetType == int.class || targetType == Integer.class) {
             return value instanceof Number number
                     ? number.intValue()
@@ -362,7 +365,11 @@ public class StructuraProcessor {
     }
 
     private boolean isNullable(Parameter parameter) {
-        return parameter.getAnnotation(Nullable.class) != null;
+        if(!parameter.isAnnotationPresent(Options.class)) {
+            return false;
+        }
+        Options options = parameter.getAnnotation(Options.class);
+        return options.optional();
     }
 
     private Class<?> getClassFromType(Type type) {
