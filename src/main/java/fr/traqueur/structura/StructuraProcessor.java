@@ -311,27 +311,7 @@ public class StructuraProcessor {
 
     private void convertMapToCollection(Map<?, ?> map, Class<?> elementType,
                                         Collection<Object> result, String prefix) {
-        @SuppressWarnings("unchecked")
-        Map<String, Object> stringMap = (Map<String, Object>) map;
-
-        if (isNumericKeyMap(stringMap)) {
-            convertNumericMapToCollection(stringMap, elementType, result, prefix);
-        } else {
-            result.add(convertCollectionElement(map, elementType, prefix));
-        }
-    }
-
-    private boolean isNumericKeyMap(Map<String, Object> map) {
-        return map.keySet().stream().allMatch(key -> key.matches(NUMERIC_KEY_PATTERN));
-    }
-
-    private void convertNumericMapToCollection(Map<String, Object> map, Class<?> elementType,
-                                               Collection<Object> result, String prefix) {
-        map.entrySet().stream()
-                .sorted(Comparator.comparingInt(entry -> Integer.parseInt(entry.getKey())))
-                .map(Map.Entry::getValue)
-                .map(value -> convertCollectionElement(value, elementType, prefix))
-                .forEach(result::add);
+        result.add(convertCollectionElement(map, elementType, prefix));
     }
 
     private Map<?, ?> convertToTypedMap(Object value, ParameterizedType paramType, String prefix) {
