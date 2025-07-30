@@ -9,7 +9,7 @@ import java.lang.annotation.Target;
  * Annotation to specify a default boolean value for a parameter or field.
  * This can be used in various contexts where a default boolean value is needed.
  */
-@Target({ElementType.PARAMETER, ElementType.FIELD})
+@Target({ElementType.PARAMETER, ElementType.FIELD, ElementType.RECORD_COMPONENT})
 @Retention(RetentionPolicy.RUNTIME)
 public @interface DefaultLong {
     long value();
