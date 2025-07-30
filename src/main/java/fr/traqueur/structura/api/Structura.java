@@ -2,9 +2,10 @@ package fr.traqueur.structura.api;
 
 import fr.traqueur.structura.api.exceptions.StructuraException;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
-import java.nio.file.Paths;
+import java.nio.file.Path;
 
 public class Structura {
 
@@ -20,12 +21,21 @@ public class Structura {
         }
     }
 
-    public static <T extends Settings> T load(String filePath, Class<T> configClass) {
+    public static <T extends Settings> T load(Path filePath, Class<T> configClass) {
         try {
-            String content = Files.readString(Paths.get(filePath));
+            String content = Files.readString(filePath);
             return parse(content, configClass);
         } catch (IOException e) {
-            throw new StructuraException("Impossible de lire le fichier: " + filePath, e);
+            throw new StructuraException("Impossible de lire le fichier: " + filePath.toAbsolutePath(), e);
+        }
+    }
+
+    public static <T extends Settings> T load(File file, Class<T> configClass) {
+        try {
+            String content = Files.readString(file.toPath());
+            return parse(content, configClass);
+        } catch (IOException e) {
+            throw new StructuraException("Impossible de lire le fichier: " + file.getAbsolutePath(), e);
         }
     }
 
