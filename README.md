@@ -35,22 +35,23 @@ dependencies {
 1. **Define your configuration record**:
 
 ```java
-import fr.traqueur.structura.api.Settings;
-import fr.traqueur.structura.api.annotations.defaults.*;
+import fr.traqueur.structura.api.Loadable;
 
 public record AppConfig(
-    @DefaultString("MyApp") String appName,
-    @DefaultInt(8080) int port,
-    @DefaultBool(false) boolean enableSsl,
-    DatabaseConfig database
-) implements Settings {}
+        @DefaultString("MyApp") String appName,
+        @DefaultInt(8080) int port,
+        @DefaultBool(false) boolean enableSsl,
+        DatabaseConfig database
+) implements Settings {
+}
 
 public record DatabaseConfig(
-    String host,
-    @DefaultInt(5432) int port,
-    String database,
-    @DefaultString("postgres") String username
-) implements Settings {}
+        String host,
+        @DefaultInt(5432) int port,
+        String database,
+        @DefaultString("postgres") String username
+) implements Settings {
+}
 ```
 
 2. **Create your YAML configuration**:

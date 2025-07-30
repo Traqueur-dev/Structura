@@ -1,13 +1,34 @@
-package fr.traqueur.structura.api.validation;
+package fr.traqueur.structura.validation;
 
-import fr.traqueur.structura.api.annotations.validation.*;
-import fr.traqueur.structura.api.exceptions.ValidationException;
+import fr.traqueur.structura.annotations.validation.*;
+import fr.traqueur.structura.api.Loadable;
+import fr.traqueur.structura.exceptions.ValidationException;
 
 import java.lang.reflect.*;
 import java.util.*;
 
+/**
+ * Validator class for validating instances of records and enums.
+ * It checks for various constraints such as min, max, pattern, not empty, and size.
+ * The validation is performed recursively for nested settings types.
+ */
 public class Validator {
 
+    public static final Validator INSTANCE = new Validator();
+
+    /**
+     * Singleton instance of the Validator.
+     */
+    private Validator() {}
+
+    /**
+     * Validates the given instance based on its type.
+     * If the instance is a record, it validates each field of the record.
+     * If the instance is an enum, it validates each field of the enum.
+     *
+     * @param instance The instance to validate.
+     * @param path The path for error messages.
+     */
     public void validate(Object instance, String path) {
         if (instance == null) return;
 
@@ -20,6 +41,15 @@ public class Validator {
         }
     }
 
+    /**
+     * Validates the given instance based on its type.
+     * If the instance is a record, it validates each field of the record.
+     * If the instance is an enum, it validates each field of the enum.
+     *
+     * @param record The record instance to validate.
+     * @param path The path for error messages.
+     * @throws ValidationException if validation fails.
+     */
     private void validateRecord(Object record, String path) {
         Class<?> recordClass = record.getClass();
         RecordComponent[] components = recordClass.getRecordComponents();
@@ -41,12 +71,19 @@ public class Validator {
         }
     }
 
+    /**
+     * Validates the fields of an enum instance.
+     * It checks for various constraints such as min, max, pattern, not empty, and size.
+     *
+     * @param enumInstance The enum instance to validate.
+     * @param path The path for error messages.
+     */
     private void validateEnum(Object enumInstance, String path) {
         Class<?> enumClass = enumInstance.getClass();
         Field[] fields = enumClass.getDeclaredFields();
 
         for (Field field : fields) {
-            if (field.isSynthetic()) {
+            if (field.isSynthetic() || field.isEnumConstant() || Modifier.isStatic(field.getModifiers())) {
                 continue;
             }
 
@@ -155,7 +192,7 @@ public class Validator {
     }
 
     private boolean isSettingsType(Class<?> type) {
-        return type.isRecord() && fr.traqueur.structura.api.Settings.class.isAssignableFrom(type);
+        return type.isRecord() && Loadable.class.isAssignableFrom(type);
     }
 
     private String formatMessage(String template, Map<String, String> variables) {

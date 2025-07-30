@@ -1,9 +1,9 @@
-package fr.traqueur.structura.api;
+package fr.traqueur.structura;
 
-import fr.traqueur.structura.DefaultValueRegistry;
-import fr.traqueur.structura.api.annotations.Options;
-import fr.traqueur.structura.api.exceptions.StructuraException;
-import fr.traqueur.structura.api.validation.Validator;
+import fr.traqueur.structura.annotations.Options;
+import fr.traqueur.structura.api.Loadable;
+import fr.traqueur.structura.exceptions.StructuraException;
+import fr.traqueur.structura.validation.Validator;
 import org.yaml.snakeyaml.Yaml;
 
 import java.lang.reflect.*;
@@ -11,6 +11,12 @@ import java.util.*;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Collectors;
 
+
+/**
+ * StructuraProcessor is responsible for parsing YAML strings into Java record instances.
+ * It supports validation, enum parsing, and handling of complex data structures.
+ * The processor can be configured to validate settings on parse.
+ */
 public class StructuraProcessor {
 
     private static final String CAMEL_CASE_REGEX = "([a-z])([A-Z])";
@@ -19,38 +25,44 @@ public class StructuraProcessor {
     private static final String PATH_SEPARATOR = ".";
     private static final String PATH_SEPARATOR_REGEX = "\\.";
 
-    private final Validator validator;
     private final boolean validateOnParse;
     private final ReentrantReadWriteLock enumLock;
     private final Yaml yaml;
 
-    protected StructuraProcessor(boolean validateOnParse) {
+    public StructuraProcessor(boolean validateOnParse) {
         this.yaml = new Yaml();
         this.validateOnParse = validateOnParse;
-        this.validator = new Validator();
         this.enumLock = new ReentrantReadWriteLock();
 
     }
 
     /**
-     * Parse une chaîne YAML et la convertit en instance de Settings.
+     * Parses a YAML string into an instance of the specified settings class.
+     * The class must be a record type and implement the Loadable interface.
      *
-     * @param yamlString    La chaîne YAML à parser
-     * @param settingsClass La classe Settings cible
-     * @param <T>           Le type de Settings
-     * @return L'instance Settings créée
-     * @throws StructuraException Si la conversion échoue
+     * @param yamlString The YAML string to parse.
+     * @param settingsClass The class type to parse into.
+     * @param <T> The type of the settings class.
+     * @return An instance of the specified settings class populated with data from the YAML string.
      */
-    public <T extends Settings> T parse(String yamlString, Class<T> settingsClass) {
+    public <T extends Loadable> T parse(String yamlString, Class<T> settingsClass) {
         Map<String, Object> settings = yaml.load(yamlString);
         T instance = settingsClass.cast(createInstance(settings, settingsClass, ""));
         if(validateOnParse) {
-            validator.validate(instance, "");
+            Validator.INSTANCE.validate(instance, "");
         }
         return instance;
     }
 
-    public <E extends Enum<E> & Settings> void parseEnum(String yamlString, Class<E> enumClass) {
+    /**
+     * Parses a YAML string into an enum type that implements Loadable.
+     * The enum constants must be annotated with Options to specify their configuration.
+     *
+     * @param yamlString The YAML string to parse.
+     * @param enumClass The enum class type to parse into.
+     * @param <E> The type of the enum class.
+     */
+    public <E extends Enum<E> & Loadable> void parseEnum(String yamlString, Class<E> enumClass) {
         enumLock.writeLock().lock();
         try {
             Map<String, Object> settings = yaml.load(yamlString);
@@ -76,12 +88,33 @@ public class StructuraProcessor {
                 }
                 injectDataIntoEnum(enumConstant, data);
                 if (validateOnParse) {
-                    validator.validate(enumConstant, kebabCaseName);
+                    Validator.INSTANCE.validate(enumConstant, kebabCaseName);
                 }
             }
         } finally {
             enumLock.writeLock().unlock();
         }
+    }
+
+    private Object createInstance(Map<String, Object> data, Class<?> recordClass, String prefix) {
+        if (!recordClass.isRecord()) {
+            throw new StructuraException("Class " + recordClass.getName() + " is not a record type");
+        }
+
+        RecordComponent[] components = recordClass.getRecordComponents();
+
+        // Check if any component is marked as key
+        Optional<RecordComponent> keyComponent = Arrays.stream(components)
+                .filter(this::isKeyComponent)
+                .findFirst();
+
+        if (keyComponent.isPresent()) {
+            return createInstanceWithKeyMapping(data, recordClass, keyComponent.get(), prefix);
+        }
+
+        Object[] constructorArgs = buildConstructorArguments(components, data, recordClass, prefix);
+
+        return instantiateRecord(recordClass, constructorArgs);
     }
 
     private boolean isKeyComponent(RecordComponent component) {
@@ -123,17 +156,20 @@ public class StructuraProcessor {
     private void injectDataIntoEnum(Enum<?> enumConstant, Object data) {
         Class<?> enumClass = enumConstant.getClass();
 
-        // Rechercher les champs qui peuvent être injectés
         Field[] fields = enumClass.getDeclaredFields();
 
         for (Field field : fields) {
-            if (field.isSynthetic()) {
+            if (field.isSynthetic() || field.isEnumConstant() || Modifier.isStatic(field.getModifiers())) {
                 continue;
             }
 
             try {
                 field.setAccessible(true);
                 Object fieldValue = getFieldValueFromData(field, data);
+
+                if(fieldValue == null) {
+                    fieldValue = DefaultValueRegistry.getInstance().getDefaultValue(field.getType(),List.of(field.getAnnotations()));
+                }
 
                 if (fieldValue != null) {
                     field.set(enumConstant, fieldValue);
@@ -163,28 +199,6 @@ public class StructuraProcessor {
         }
 
         return null;
-    }
-
-    public Object createInstance(Map<String, Object> data, Class<?> recordClass, String prefix) {
-        if (!recordClass.isRecord()) {
-            throw new StructuraException("Class " + recordClass.getName() + " is not a record type");
-        }
-
-        RecordComponent[] components = recordClass.getRecordComponents();
-
-        // Check if any component is marked as key
-        Optional<RecordComponent> keyComponent = Arrays.stream(components)
-                .filter(this::isKeyComponent)
-                .findFirst();
-
-        if (keyComponent.isPresent()) {
-            return createInstanceWithKeyMapping(data, recordClass, keyComponent.get(), prefix);
-        }
-
-        Object[] constructorArgs = buildConstructorArguments(components, data, recordClass, prefix);
-        Object instance = instantiateRecord(recordClass, constructorArgs);
-
-        return instance;
     }
 
 
@@ -227,7 +241,7 @@ public class StructuraProcessor {
     }
 
     private Object getDefaultValue(Parameter parameter, String fullPath) {
-        Object defaultValue = DefaultValueRegistry.getInstance().getDefaultValue(parameter);
+        Object defaultValue = DefaultValueRegistry.getInstance().getDefaultValue(parameter.getType(), List.of(parameter.getAnnotations()));
 
         if (defaultValue == null && !isNullable(parameter)) {
             throw new StructuraException(fullPath + " is required but not provided");
@@ -366,7 +380,7 @@ public class StructuraProcessor {
     }
 
     private boolean isSettingsRecord(Class<?> type) {
-        return type.isRecord() && Settings.class.isAssignableFrom(type);
+        return type.isRecord() && Loadable.class.isAssignableFrom(type);
     }
 
     private Object convertPrimitiveValue(Object value, Class<?> targetType) {
