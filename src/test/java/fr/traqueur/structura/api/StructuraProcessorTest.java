@@ -176,7 +176,7 @@ class StructuraProcessorTest {
             supported-databases:
               - MYSQL
               - POSTGRESQL
-              - MONGODB
+              - MONGO_DB_SOURCE
             """;
 
             ConfigWithEnums config = processor.parse(yaml, ConfigWithEnums.class);
@@ -184,7 +184,7 @@ class StructuraProcessorTest {
             assertNotNull(config);
             assertEquals(LogLevel.INFO, config.logLevel());
             assertEquals(Environment.PRODUCTION, config.environment());
-            assertEquals(List.of(DatabaseType.MYSQL, DatabaseType.POSTGRESQL, DatabaseType.MONGODB),
+            assertEquals(List.of(DatabaseType.MYSQL, DatabaseType.POSTGRESQL, DatabaseType.MONGO_DB_SOURCE),
                     config.supportedDatabases());
         }
 
@@ -498,7 +498,7 @@ class StructuraProcessorTest {
                   properties:
                     ssl: "false"
                     applicationName: "myapp"
-                mongodb:
+                mongo-db-source:
                   driver: "mongodb"
                   default-port: 27017
                   properties:
@@ -524,11 +524,11 @@ class StructuraProcessorTest {
             assertEquals("myapp", DatabaseType.POSTGRESQL.properties.get("applicationName"));
 
             // Vérifier que MONGODB a été populé
-            assertEquals("mongodb", DatabaseType.MONGODB.driver);
-            assertEquals(27017, DatabaseType.MONGODB.defaultPort);
-            assertNotNull(DatabaseType.MONGODB.properties);
-            assertEquals("admin", DatabaseType.MONGODB.properties.get("authSource"));
-            assertEquals("true", DatabaseType.MONGODB.properties.get("retryWrites"));
+            assertEquals("mongodb", DatabaseType.MONGO_DB_SOURCE.driver);
+            assertEquals(27017, DatabaseType.MONGO_DB_SOURCE.defaultPort);
+            assertNotNull(DatabaseType.MONGO_DB_SOURCE.properties);
+            assertEquals("admin", DatabaseType.MONGO_DB_SOURCE.properties.get("authSource"));
+            assertEquals("true", DatabaseType.MONGO_DB_SOURCE.properties.get("retryWrites"));
         }
 
         @Test
@@ -541,7 +541,7 @@ class StructuraProcessorTest {
                   driver: "unknown"
                 postgresql:
                   driver: "org.postgresql.Driver"
-                mongodb:
+                mongo-db-source:
                   driver: "mongodb"
                   default-port: 27017
                 """;
@@ -554,8 +554,8 @@ class StructuraProcessorTest {
             // Les constantes valides devraient être populées
             assertEquals("com.mysql.cj.jdbc.Driver", DatabaseType.MYSQL.driver);
             assertEquals("org.postgresql.Driver", DatabaseType.POSTGRESQL.driver);
-            assertEquals("mongodb", DatabaseType.MONGODB.driver);
-            assertEquals(27017, DatabaseType.MONGODB.defaultPort);
+            assertEquals("mongodb", DatabaseType.MONGO_DB_SOURCE.driver);
+            assertEquals(27017, DatabaseType.MONGO_DB_SOURCE.defaultPort);
         }
 
         @Test
@@ -580,7 +580,7 @@ class StructuraProcessorTest {
             String yaml = """
                 mysql:
                   driver: "com.mysql.cj.jdbc.Driver"
-                mongodb:
+                mongo-db-source:
                   default-port: 27017
                 postgresql:
                   properties:
@@ -600,7 +600,7 @@ class StructuraProcessorTest {
             String yaml = """
                 mysql: {}
                 postgresql: {}
-                mongodb: {}
+                mongo-db-source: {}
                 """;
 
             for (DatabaseType value : DatabaseType.values()) {
