@@ -9,7 +9,7 @@ import java.lang.annotation.Target;
  * Annotation to specify the minimum value for a numeric field.
  * This can be used on parameters or fields to enforce validation rules.
  */
-@Target({ElementType.PARAMETER, ElementType.FIELD})
+@Target({ElementType.PARAMETER, ElementType.FIELD, ElementType.RECORD_COMPONENT})
 @Retention(RetentionPolicy.RUNTIME)
 public @interface Min {
     long value();

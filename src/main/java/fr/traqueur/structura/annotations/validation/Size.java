@@ -10,7 +10,7 @@ import java.lang.annotation.Target;
  * This can be used on parameters or fields to enforce validation rules.
  * Work with both collections and strings.
  */
-@Target({ElementType.PARAMETER, ElementType.FIELD})
+@Target({ElementType.PARAMETER, ElementType.FIELD, ElementType.RECORD_COMPONENT})
 @Retention(RetentionPolicy.RUNTIME)
 public @interface Size {
     int min() default 0;

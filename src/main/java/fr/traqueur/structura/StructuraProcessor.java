@@ -46,6 +46,9 @@ public class StructuraProcessor {
      * @return An instance of the specified settings class populated with data from the YAML string.
      */
     public <T extends Loadable> T parse(String yamlString, Class<T> settingsClass) {
+        if (yamlString == null || yamlString.isEmpty()) {
+            throw new StructuraException("YAML string cannot be null or empty");
+        }
         Map<String, Object> settings = yaml.load(yamlString);
         T instance = settingsClass.cast(createInstance(settings, settingsClass, ""));
         if(validateOnParse) {
@@ -63,6 +66,9 @@ public class StructuraProcessor {
      * @param <E> The type of the enum class.
      */
     public <E extends Enum<E> & Loadable> void parseEnum(String yamlString, Class<E> enumClass) {
+        if (yamlString == null || yamlString.isEmpty()) {
+            throw new StructuraException("YAML string cannot be null or empty");
+        }
         enumLock.writeLock().lock();
         try {
             Map<String, Object> settings = yaml.load(yamlString);
@@ -97,6 +103,9 @@ public class StructuraProcessor {
     }
 
     private Object createInstance(Map<String, Object> data, Class<?> recordClass, String prefix) {
+        if (recordClass == null) {
+            throw new StructuraException("Record class cannot be null");
+        }
         if (!recordClass.isRecord()) {
             throw new StructuraException("Class " + recordClass.getName() + " is not a record type");
         }
@@ -118,10 +127,8 @@ public class StructuraProcessor {
     }
 
     private boolean isKeyComponent(RecordComponent component) {
-        Parameter param = getConstructorParameter(component.getDeclaringRecord(), component.getName(),
-                Arrays.asList(component.getDeclaringRecord().getRecordComponents()).indexOf(component));
-        return param.isAnnotationPresent(Options.class) &&
-                param.getAnnotation(Options.class).isKey();
+        return component.isAnnotationPresent(Options.class) &&
+                component.getAnnotation(Options.class).isKey();
     }
 
     private Object createInstanceWithKeyMapping(Map<String, Object> data, Class<?> recordClass,
