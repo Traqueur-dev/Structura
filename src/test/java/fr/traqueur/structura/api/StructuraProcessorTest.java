@@ -1,6 +1,7 @@
 package fr.traqueur.structura.api;
 
-import fr.traqueur.structura.api.exceptions.StructuraException;
+import fr.traqueur.structura.StructuraProcessor;
+import fr.traqueur.structura.exceptions.StructuraException;
 import fr.traqueur.structura.models.TestSettings.*;
 import org.junit.jupiter.api.*;
 
@@ -8,7 +9,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.List;
-import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 

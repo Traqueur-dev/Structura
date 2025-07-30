@@ -1,9 +1,9 @@
 
 package fr.traqueur.structura.models;
 
-import fr.traqueur.structura.api.Settings;
-import fr.traqueur.structura.api.annotations.Options;
-import fr.traqueur.structura.api.annotations.defaults.*;
+import fr.traqueur.structura.annotations.defaults.*;
+import fr.traqueur.structura.api.Loadable;
+import fr.traqueur.structura.annotations.Options;
 
 import java.util.List;
 import java.util.Map;
@@ -20,7 +20,7 @@ public class TestSettings {
             String name,
             int port,
             boolean enabled
-    ) implements Settings {}
+    ) implements Loadable {}
 
     // === CONFIGURATION WITH DEFAULTS ===
     public record ConfigWithDefaults(
@@ -29,20 +29,20 @@ public class TestSettings {
             @DefaultBool(true) boolean debugMode,
             @DefaultLong(30000L) long timeout,
             @DefaultDouble(1.5) double multiplier
-    ) implements Settings {}
+    ) implements Loadable {}
 
     // === CONFIGURATION WITH OPTIONS ===
     public record ConfigWithOptions(
             @Options(name = "app-name") String applicationName,
             @Options(name = "server-config") ServerConfig serverConfig
-    ) implements Settings {}
+    ) implements Loadable {}
 
     // === CONFIGURATION WITH NULLABLE ===
     public record ConfigWithNullable(
             String required,
             @Options(optional = true) String optional,
             @Options(optional = true) @DefaultString("fallback") String optionalWithDefault
-    ) implements Settings {}
+    ) implements Loadable {}
 
     // === CONFIGURATION NESTED ===
     public record DatabaseConfig(
@@ -51,19 +51,19 @@ public class TestSettings {
             String database,
             @DefaultString("root") String username,
             @Options(optional = true) String password
-    ) implements Settings {}
+    ) implements Loadable {}
 
     public record ServerConfig(
             String host,
             int port,
             @DefaultBool(false) boolean ssl
-    ) implements Settings {}
+    ) implements Loadable {}
 
     public record ComplexConfig(
             String appName,
             DatabaseConfig database,
             ServerConfig server
-    ) implements Settings {}
+    ) implements Loadable {}
 
     // === CONFIGURATION WITH COLLECTIONS ===
     public record ConfigWithCollections(
@@ -71,7 +71,7 @@ public class TestSettings {
             Set<Integer> ports,
             Map<String, String> properties,
             List<DatabaseConfig> databases
-    ) implements Settings {}
+    ) implements Loadable {}
 
     // === ENUMS ===
     public enum LogLevel {
@@ -84,7 +84,7 @@ public class TestSettings {
         PRODUCTION;
     }
 
-    public enum DatabaseType implements Settings {
+    public enum DatabaseType implements Loadable {
         MYSQL,
         POSTGRESQL,
         MONGODB;
@@ -99,17 +99,17 @@ public class TestSettings {
             LogLevel logLevel,
             Environment environment,
             List<DatabaseType> supportedDatabases
-    ) implements Settings {}
+    ) implements Loadable {}
 
     // === EDGE CASES ===
-    public record EmptyConfig() implements Settings {}
+    public record EmptyConfig() implements Loadable {}
 
-    public record SingleFieldConfig(String value) implements Settings {}
+    public record SingleFieldConfig(String value) implements Loadable {}
 
     public record ConfigWithSpecialChars(
             @Options(name = "field-with-dashes") String fieldWithDashes,
             @Options(name = "field_with_underscores") String fieldWithUnderscores
-    ) implements Settings {}
+    ) implements Loadable {}
 
     // === CONFIGURATION FOR PERF ===
     public record LargeConfig(
@@ -117,5 +117,5 @@ public class TestSettings {
             String field6, String field7, String field8, String field9, String field10,
             int int1, int int2, int int3, int int4, int int5,
             boolean bool1, boolean bool2, boolean bool3, boolean bool4, boolean bool5
-    ) implements Settings {}
+    ) implements Loadable {}
 }
