@@ -92,7 +92,6 @@ public class StructuraProcessor {
                     ));
 
             for (Map.Entry<String, E> stringEEntry : enumByKebabCase.entrySet()) {
-                System.out.println("Processing enum constant: " + stringEEntry.getKey());
                 String kebabCaseName = stringEEntry.getKey();
                 E enumConstant = stringEEntry.getValue();
 
@@ -463,8 +462,6 @@ public class StructuraProcessor {
     }
 
     private String convertSnakeCaseToKebabCase(String snakeCase) {
-        System.out.println("Converting snake_case to kebab-case: " + snakeCase);
-        System.out.println("result: " + snakeCase.replaceAll(SNAKE_CASE_REGEX, KEBAB_CASE_REPLACEMENT).toLowerCase());
         return snakeCase.replaceAll(SNAKE_CASE_REGEX, KEBAB_CASE_REPLACEMENT).toLowerCase();
     }
 

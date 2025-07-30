@@ -570,7 +570,6 @@ class StructuraProcessorTest {
             StructuraException exception = assertThrows(StructuraException.class, () -> {
                 processor.parseEnum(yaml, DatabaseType.class);
             });
-            System.out.println(exception.getMessage());
             assertTrue(exception.getMessage().contains("Missing data for enum constant"));
         }
 
