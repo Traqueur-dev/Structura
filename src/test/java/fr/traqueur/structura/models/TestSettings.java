@@ -87,7 +87,7 @@ public class TestSettings {
     public enum DatabaseType implements Loadable {
         MYSQL,
         POSTGRESQL,
-        MONGODB;
+        MONGO_DB_SOURCE;
         
         @Options(optional = true) public String driver;
         @DefaultInt(0) public int defaultPort;
