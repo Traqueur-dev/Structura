@@ -14,6 +14,7 @@ repositories {
 
 dependencies {
     compileOnly("org.yaml:snakeyaml:2.4")
+    compileOnly("org.jetbrains:annotations:26.0.2")
 }
 
 val targetJavaVersion = 21

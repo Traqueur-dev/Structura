@@ -1,4 +1,4 @@
-package fr.traqueur.config.logger;
+package fr.traqueur.structura.api.logging;
 
 public interface Logger {
 

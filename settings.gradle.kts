@@ -1,2 +1,1 @@
-rootProject.name = "ConfigLib"
-include(":test-plugin")
+rootProject.name = "Structura"
