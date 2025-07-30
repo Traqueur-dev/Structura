@@ -20,8 +20,8 @@ import java.util.stream.Collectors;
 public class StructuraProcessor {
 
     private static final String CAMEL_CASE_REGEX = "([a-z])([A-Z])";
+    private static final String SNAKE_CASE_REGEX = "$1_$2";
     private static final String KEBAB_CASE_REPLACEMENT = "$1-$2";
-    private static final String NUMERIC_KEY_PATTERN = "\\d+";
     private static final String PATH_SEPARATOR = ".";
     private static final String PATH_SEPARATOR_REGEX = "\\.";
 
@@ -87,7 +87,7 @@ public class StructuraProcessor {
             // Créer un mapping des noms kebab-case vers les constantes enum
             Map<String, E> enumByKebabCase = Arrays.stream(enumConstants)
                     .collect(Collectors.toMap(
-                            e -> convertCamelCaseToKebabCase(e.name()),
+                            e -> convertSnakeCaseToKebabCase(e.name()),
                             e -> e
                     ));
 
@@ -459,6 +459,10 @@ public class StructuraProcessor {
             }
         }
         return convertCamelCaseToKebabCase(defaultName);
+    }
+
+    private String convertSnakeCaseToKebabCase(String snakeCase) {
+        return snakeCase.replaceAll(SNAKE_CASE_REGEX, KEBAB_CASE_REPLACEMENT).toLowerCase();
     }
 
     private String convertCamelCaseToKebabCase(String camelCase) {
