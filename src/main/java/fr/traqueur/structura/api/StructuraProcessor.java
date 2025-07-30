@@ -3,10 +3,12 @@ package fr.traqueur.structura.api;
 import fr.traqueur.structura.DefaultValueRegistry;
 import fr.traqueur.structura.api.annotations.Options;
 import fr.traqueur.structura.api.exceptions.StructuraException;
+import fr.traqueur.structura.api.validation.Validator;
 import org.yaml.snakeyaml.Yaml;
 
 import java.lang.reflect.*;
 import java.util.*;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Collectors;
 
 public class StructuraProcessor {
@@ -17,10 +19,17 @@ public class StructuraProcessor {
     private static final String PATH_SEPARATOR = ".";
     private static final String PATH_SEPARATOR_REGEX = "\\.";
 
+    private final Validator validator;
+    private final boolean validateOnParse;
+    private final ReentrantReadWriteLock enumLock;
     private final Yaml yaml;
 
-    public StructuraProcessor() {
+    protected StructuraProcessor(boolean validateOnParse) {
         this.yaml = new Yaml();
+        this.validateOnParse = validateOnParse;
+        this.validator = new Validator();
+        this.enumLock = new ReentrantReadWriteLock();
+
     }
 
     /**
@@ -33,36 +42,82 @@ public class StructuraProcessor {
      * @throws StructuraException Si la conversion échoue
      */
     public <T extends Settings> T parse(String yamlString, Class<T> settingsClass) {
-        validateInput(yamlString, settingsClass);
-
         Map<String, Object> settings = yaml.load(yamlString);
-        return settingsClass.cast(createInstance(settings, settingsClass, ""));
+        T instance = settingsClass.cast(createInstance(settings, settingsClass, ""));
+        if(validateOnParse) {
+            validator.validate(instance, "");
+        }
+        return instance;
     }
 
     public <E extends Enum<E> & Settings> void parseEnum(String yamlString, Class<E> enumClass) {
-        Map<String, Object> settings = yaml.load(yamlString);
-        E[] enumConstants = enumClass.getEnumConstants();
+        enumLock.writeLock().lock();
+        try {
+            Map<String, Object> settings = yaml.load(yamlString);
+            E[] enumConstants = enumClass.getEnumConstants();
 
-        // Créer un mapping des noms kebab-case vers les constantes enum
-        Map<String, E> enumByKebabCase = Arrays.stream(enumConstants)
-                .collect(Collectors.toMap(
-                        e -> convertCamelCaseToKebabCase(e.name()),
-                        e -> e
-                ));
+            // Créer un mapping des noms kebab-case vers les constantes enum
+            Map<String, E> enumByKebabCase = Arrays.stream(enumConstants)
+                    .collect(Collectors.toMap(
+                            e -> convertCamelCaseToKebabCase(e.name()),
+                            e -> e
+                    ));
 
-        for (Map.Entry<String, E> stringEEntry : enumByKebabCase.entrySet()) {
-            String kebabCaseName = stringEEntry.getKey();
-            E enumConstant = stringEEntry.getValue();
+            for (Map.Entry<String, E> stringEEntry : enumByKebabCase.entrySet()) {
+                String kebabCaseName = stringEEntry.getKey();
+                E enumConstant = stringEEntry.getValue();
 
-            if (!settings.containsKey(kebabCaseName)) {
-                throw new StructuraException("Missing data for enum constant: " + kebabCaseName);
+                if (!settings.containsKey(kebabCaseName)) {
+                    throw new StructuraException("Missing data for enum constant: " + kebabCaseName);
+                }
+                Object data = settings.get(kebabCaseName);
+                if (data == null) {
+                    throw new StructuraException("Missing data for enum constant: " + kebabCaseName);
+                }
+                injectDataIntoEnum(enumConstant, data);
+                if (validateOnParse) {
+                    validator.validate(enumConstant, kebabCaseName);
+                }
             }
-            Object data = settings.get(kebabCaseName);
-            if (data == null) {
-                throw new StructuraException("Missing data for enum constant: " + kebabCaseName);
-            }
-            injectDataIntoEnum(enumConstant, data);
+        } finally {
+            enumLock.writeLock().unlock();
         }
+    }
+
+    private boolean isKeyComponent(RecordComponent component) {
+        Parameter param = getConstructorParameter(component.getDeclaringRecord(), component.getName(),
+                Arrays.asList(component.getDeclaringRecord().getRecordComponents()).indexOf(component));
+        return param.isAnnotationPresent(Options.class) &&
+                param.getAnnotation(Options.class).isKey();
+    }
+
+    private Object createInstanceWithKeyMapping(Map<String, Object> data, Class<?> recordClass,
+                                                RecordComponent keyComponent, String prefix) {
+        RecordComponent[] components = recordClass.getRecordComponents();
+
+        if (data.size() == 1) {
+            Map.Entry<String, Object> entry = data.entrySet().iterator().next();
+            String keyValue = entry.getKey();
+            Object valueData = entry.getValue();
+
+            Object[] args = new Object[components.length];
+
+            for (int i = 0; i < components.length; i++) {
+                RecordComponent component = components[i];
+                if (component.equals(keyComponent)) {
+                    args[i] = convertValue(keyValue, component.getType(), prefix);
+                } else {
+                    Parameter parameter = getConstructorParameter(recordClass, component.getName(), i);
+                    args[i] = resolveComponentValue(component, parameter,
+                            valueData instanceof Map ? (Map<String, Object>) valueData : Collections.emptyMap(),
+                            prefix);
+                }
+            }
+
+            return instantiateRecord(recordClass, args);
+        }
+
+        throw new StructuraException("Key-based mapping requires exactly one key-value pair");
     }
 
     private void injectDataIntoEnum(Enum<?> enumConstant, Object data) {
@@ -72,7 +127,7 @@ public class StructuraProcessor {
         Field[] fields = enumClass.getDeclaredFields();
 
         for (Field field : fields) {
-            if (field.isSynthetic() || Modifier.isStatic(field.getModifiers())) {
+            if (field.isSynthetic()) {
                 continue;
             }
 
@@ -110,33 +165,28 @@ public class StructuraProcessor {
         return null;
     }
 
-
-    /**
-     * Crée une instance de record à partir des données YAML.
-     *
-     * @param data        Les données YAML sous forme de Map
-     * @param recordClass La classe record à instancier
-     * @param prefix      Le préfixe de chemin pour les messages d'erreur
-     * @return L'instance créée
-     * @throws StructuraException Si la création échoue
-     */
     public Object createInstance(Map<String, Object> data, Class<?> recordClass, String prefix) {
-        if(!recordClass.isRecord()) {
+        if (!recordClass.isRecord()) {
             throw new StructuraException("Class " + recordClass.getName() + " is not a record type");
         }
+
         RecordComponent[] components = recordClass.getRecordComponents();
+
+        // Check if any component is marked as key
+        Optional<RecordComponent> keyComponent = Arrays.stream(components)
+                .filter(this::isKeyComponent)
+                .findFirst();
+
+        if (keyComponent.isPresent()) {
+            return createInstanceWithKeyMapping(data, recordClass, keyComponent.get(), prefix);
+        }
+
         Object[] constructorArgs = buildConstructorArguments(components, data, recordClass, prefix);
-        return instantiateRecord(recordClass, constructorArgs);
+        Object instance = instantiateRecord(recordClass, constructorArgs);
+
+        return instance;
     }
 
-    private void validateInput(String yamlString, Class<?> settingsClass) {
-        if (yamlString == null || yamlString.trim().isEmpty()) {
-            throw new StructuraException("YAML string cannot be null or empty");
-        }
-        if (settingsClass == null) {
-            throw new StructuraException("Settings class cannot be null");
-        }
-    }
 
     private Object[] buildConstructorArguments(RecordComponent[] components, Map<String, Object> data,
                                                Class<?> recordClass, String prefix) {
