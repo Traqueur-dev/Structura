@@ -19,7 +19,7 @@ class StructuraProcessorTest {
 
     @BeforeEach
     void setUp() {
-        processor = new StructuraProcessor();
+        processor = new StructuraProcessor(true);
     }
 
     @Nested
