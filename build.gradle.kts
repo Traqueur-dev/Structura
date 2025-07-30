@@ -1,7 +1,7 @@
 import java.util.*
 
 plugins {
-    id("java")
+    id("java-library")
     id("maven-publish")
 }
 
@@ -14,8 +14,28 @@ repositories {
 
 dependencies {
     compileOnly("org.yaml:snakeyaml:2.4")
-    compileOnly("org.jetbrains:annotations:26.0.2")
+
+    testImplementation("org.yaml:snakeyaml:2.4")
+    testImplementation("org.junit.jupiter:junit-jupiter:5.10.0")
 }
+
+tasks.test {
+    useJUnitPlatform()
+    jvmArgs = listOf("-XX:+EnableDynamicAgentLoading")
+
+    reports {
+        html.required.set(true)
+        junitXml.required.set(true)
+    }
+
+    testLogging {
+        showStandardStreams = true
+        events("passed", "skipped", "failed", "standardOut", "standardError")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
+}
+
+
 
 val targetJavaVersion = 21
 java {
