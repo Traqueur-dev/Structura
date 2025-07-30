@@ -3,6 +3,7 @@ package fr.traqueur.structura.api;
 import fr.traqueur.structura.DefaultValueRegistry;
 import fr.traqueur.structura.api.annotations.Options;
 import fr.traqueur.structura.api.exceptions.StructuraException;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.yaml.snakeyaml.Yaml;
 
@@ -33,12 +34,86 @@ public class StructuraProcessor {
      * @return L'instance Settings créée
      * @throws StructuraException Si la conversion échoue
      */
-    public <T extends Settings> T parse(String yamlString, Class<T> settingsClass) {
+    public <T extends Settings> T parse(String yamlString, @NotNull Class<T> settingsClass) {
         validateInput(yamlString, settingsClass);
 
         Map<String, Object> settings = yaml.load(yamlString);
         return settingsClass.cast(createInstance(settings, settingsClass, ""));
     }
+
+    public <E extends Enum<E>> E parseEnum(String yamlString, @NotNull Class<E> enumClass) {
+        Map<String, Object> settings = yaml.load(yamlString);
+        return injectIntoEnum(settings, enumClass);
+    }
+
+    public <E extends Enum<E>> E injectIntoEnum(Map<String, Object> data, Class<E> enumClass) {
+        // Récupérer toutes les constantes de l'enum
+        E[] enumConstants = enumClass.getEnumConstants();
+        Map<String, E> enumByKebabCase = Arrays.stream(enumConstants)
+                .collect(Collectors.toMap(
+                        e -> convertCamelCaseToKebabCase(e.name()),
+                        e -> e
+                ));
+
+        // Rechercher la première enum qui a une clé correspondante dans les données
+        for (Map.Entry<String, Object> entry : data.entrySet()) {
+            String key = entry.getKey();
+            E enumConstant = enumByKebabCase.get(key);
+
+            if (enumConstant != null) {
+                injectDataIntoEnum(enumConstant, entry.getValue());
+                return enumConstant;
+            }
+        }
+
+        throw new StructuraException("No matching enum constant found for keys: " + data.keySet());
+    }
+
+    private void injectDataIntoEnum(Enum<?> enumConstant, Object data) {
+        Class<?> enumClass = enumConstant.getClass();
+
+        // Rechercher les champs qui peuvent être injectés
+        Field[] fields = enumClass.getDeclaredFields();
+
+        for (Field field : fields) {
+            if (field.isSynthetic() || Modifier.isStatic(field.getModifiers())) {
+                continue;
+            }
+
+            try {
+                field.setAccessible(true);
+                Object fieldValue = getFieldValueFromData(field, data);
+
+                if (fieldValue != null) {
+                    field.set(enumConstant, fieldValue);
+                }
+            } catch (IllegalAccessException e) {
+                throw new StructuraException("Cannot inject into enum field: " + field.getName(), e);
+            }
+        }
+    }
+    private Object getFieldValueFromData(Field field, Object data) {
+        String fieldName = getFieldNameFromField(field);
+
+        if (data instanceof Map<?, ?> map) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> dataMap = (Map<String, Object>) map;
+            Object value = dataMap.get(fieldName);
+
+            if (value != null) {
+                return convertValue(value, field.getType(), "");
+            }
+        } else {
+            // Si les données ne sont pas une map, essayer de les convertir directement
+            if (field.getType().isAssignableFrom(data.getClass())) {
+                return data;
+            }
+            return convertValue(data, field.getType(), "");
+        }
+
+        return null;
+    }
+
 
     /**
      * Crée une instance de record à partir des données YAML.
@@ -341,5 +416,17 @@ public class StructuraProcessor {
         }
 
         return current;
+    }
+
+    private String getFieldNameFromField(Field field) {
+        // Vérifier s'il y a une annotation @Options
+        if (field.isAnnotationPresent(Options.class)) {
+            Options options = field.getAnnotation(Options.class);
+            if (!options.name().trim().isEmpty()) {
+                return options.name();
+            }
+        }
+
+        return convertCamelCaseToKebabCase(field.getName());
     }
 }
