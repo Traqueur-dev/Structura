@@ -1,6 +1,7 @@
 package fr.traqueur.structura.api;
 
 import fr.traqueur.structura.StructuraProcessor;
+import fr.traqueur.structura.Updater;
 import fr.traqueur.structura.exceptions.StructuraException;
 
 import java.io.File;
@@ -34,6 +35,10 @@ import java.nio.file.Path;
 public class Structura {
 
     private static StructuraProcessor PROCESSOR = builder().build();
+
+    static {
+        Updater.checkUpdates();
+    }
 
     /**
      * Private constructor to prevent instantiation.
