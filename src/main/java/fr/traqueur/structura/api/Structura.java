@@ -9,9 +9,30 @@ import java.nio.file.Path;
 
 public class Structura {
 
-    private static final StructuraProcessor PROCESSOR = new StructuraProcessor();
+    private static StructuraProcessor PROCESSOR = builder().build();
 
     private Structura() {}
+
+    public static StructuraBuilder builder() {
+        return new StructuraBuilder();
+    }
+
+    public static class StructuraBuilder {
+        private boolean validateOnParse = true;
+
+        public StructuraBuilder withValidation(boolean validate) {
+            this.validateOnParse = validate;
+            return this;
+        }
+
+        public StructuraProcessor build() {
+            return new StructuraProcessor(validateOnParse);
+        }
+    }
+
+    public static void with(StructuraProcessor processor) {
+        PROCESSOR = processor;
+    }
 
     public static <E extends Enum<E> & Settings> void parseEnum(String yamlContent, Class<E> enumClass) {
         try {
