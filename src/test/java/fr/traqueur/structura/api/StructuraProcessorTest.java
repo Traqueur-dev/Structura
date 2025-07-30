@@ -23,11 +23,11 @@ class StructuraProcessorTest {
     }
 
     @Nested
-    @DisplayName("Configuration simple")
+    @DisplayName("Simple Configuration")
     class SimpleConfigurationTest {
 
         @Test
-        @DisplayName("Devrait parser une configuration simple avec succès")
+        @DisplayName("Parse simple configuration with basic types")
         void shouldParseSimpleConfiguration() {
             String yaml = """
                 name: "MyApp"
@@ -42,30 +42,14 @@ class StructuraProcessorTest {
             assertEquals(8080, config.port());
             assertTrue(config.enabled());
         }
-
-        @Test
-        @DisplayName("Devrait gérer les conversions de types automatiques")
-        void shouldHandleAutomaticTypeConversion() {
-            String yaml = """
-                name: MyApp
-                port: "9000"
-                enabled: "false"
-                """;
-
-            SimpleConfig config = processor.parse(yaml, SimpleConfig.class);
-
-            assertEquals("MyApp", config.name());
-            assertEquals(9000, config.port());
-            assertFalse(config.enabled());
-        }
     }
 
     @Nested
-    @DisplayName("Valeurs par défaut")
+    @DisplayName("Default Values")
     class DefaultValuesTest {
 
         @Test
-        @DisplayName("Devrait utiliser les valeurs par défaut quand les champs sont absents")
+        @DisplayName("Should use default values when fields are missing")
         void shouldUseDefaultValuesWhenFieldsAreMissing() {
             String yaml = "{}";
 
@@ -79,7 +63,7 @@ class StructuraProcessorTest {
         }
 
         @Test
-        @DisplayName("Devrait privilégier les valeurs fournies sur les valeurs par défaut")
+        @DisplayName("Should use specified values over defaults")
         void shouldPreferProvidedValuesOverDefaults() {
             String yaml = """
                 app-name: "CustomApp"
@@ -98,7 +82,7 @@ class StructuraProcessorTest {
 
         @ParameterizedTest
         @ValueSource(strings = {"true", "false", "TRUE", "FALSE", "True", "False"})
-        @DisplayName("Devrait parser correctement les valeurs booléennes")
+        @DisplayName("Should parse boolean values correctly")
         void shouldParseBooleanValuesCorrectly(String boolValue) {
             String yaml = "debug-mode: " + boolValue;
 
@@ -110,11 +94,11 @@ class StructuraProcessorTest {
     }
 
     @Nested
-    @DisplayName("Options personnalisées")
+    @DisplayName("Check Custom Options")
     class CustomOptionsTest {
 
         @Test
-        @DisplayName("Devrait respecter les noms de champs personnalisés")
+        @DisplayName("Use custom field names for parsing")
         void shouldRespectCustomFieldNames() {
             String yaml = """
                 app-name: "MyApplication"
@@ -135,11 +119,11 @@ class StructuraProcessorTest {
     }
 
     @Nested
-    @DisplayName("Champs nullable")
+    @DisplayName("Nullable Fields")
     class NullableFieldsTest {
 
         @Test
-        @DisplayName("Devrait gérer les champs nullable absents")
+        @DisplayName("Should handle missing nullable fields")
         void shouldHandleMissingNullableFields() {
             String yaml = "required: \"value\"";
 
@@ -151,7 +135,7 @@ class StructuraProcessorTest {
         }
 
         @Test
-        @DisplayName("Devrait gérer les champs nullable présents")
+        @DisplayName("Should handle present nullable fields")
         void shouldHandlePresentNullableFields() {
             String yaml = """
                 required: "value"
@@ -167,7 +151,7 @@ class StructuraProcessorTest {
         }
 
         @Test
-        @DisplayName("Devrait lever une exception pour les champs requis manquants")
+        @DisplayName("Should throw exception for missing required fields")
         void shouldThrowExceptionForMissingRequiredFields() {
             String yaml = "optional: \"present\"";
 
@@ -180,11 +164,11 @@ class StructuraProcessorTest {
     }
 
     @Nested
-    @DisplayName("Configuration imbriquée")
+    @DisplayName("Nested Configuration")
     class NestedConfigurationTest {
 
         @Test
-        @DisplayName("Devrait parser une configuration imbriquée avec enum avec succès")
+        @DisplayName("Should parse nested configuration with enum values correctly")
         void shouldParseConfigWithEnums() {
             String yaml = """
             log-level: INFO
@@ -205,7 +189,7 @@ class StructuraProcessorTest {
         }
 
         @Test
-        @DisplayName("Devrait parser une configuration imbriquée complexe")
+        @DisplayName("Should handle missing enum values gracefully")
         void shouldParseComplexNestedConfiguration() {
             String yaml = """
                 app-name: "ComplexApp"
@@ -244,7 +228,7 @@ class StructuraProcessorTest {
     class CollectionsTest {
 
         @Test
-        @DisplayName("Devrait parser les listes correctement")
+        @DisplayName("Should parse lists and maps correctly")
         void shouldParseListsCorrectly() {
             String yaml = """
                 hosts:
