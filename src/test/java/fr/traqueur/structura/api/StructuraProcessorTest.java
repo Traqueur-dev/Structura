@@ -184,7 +184,7 @@ class StructuraProcessorTest {
             assertNotNull(config);
             assertEquals(LogLevel.INFO, config.logLevel());
             assertEquals(Environment.PRODUCTION, config.environment());
-            assertEquals(List.of(DatabaseType.MYSQL, DatabaseType.POSTGRESQL, DatabaseType.MONGO_DB_SOURCE),
+            assertIterableEquals(List.of(DatabaseType.MYSQL, DatabaseType.POSTGRESQL, DatabaseType.MONGO_DB_SOURCE),
                     config.supportedDatabases());
         }
 
