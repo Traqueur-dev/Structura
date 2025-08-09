@@ -6,6 +6,7 @@
 
 - 🎯 **Type-safe**: Compile-time safety with Java records
 - 🔧 **Annotation-driven**: Flexible configuration with `@Options` and default value annotations
+- 🔑 **Key-based mapping**: Flexible YAML structures with `@Options(isKey = true)` for both simple and complex object flattening
 - 🏗️ **Nested configurations**: Support for complex, hierarchical settings
 - 📋 **Collections support**: Lists, Sets, and Maps with generic type safety
 - 🔄 **Enum integration**: Special support for configuration enums
@@ -42,7 +43,7 @@ public record AppConfig(
         @DefaultInt(8080) int port,
         @DefaultBool(false) boolean enableSsl,
         DatabaseConfig database
-) implements Settings {
+) implements Loadable {
 }
 
 public record DatabaseConfig(
@@ -50,7 +51,7 @@ public record DatabaseConfig(
         @DefaultInt(5432) int port,
         String database,
         @DefaultString("postgres") String username
-) implements Settings {
+) implements Loadable {
 }
 ```
 
@@ -100,7 +101,7 @@ public record ServerConfig(
     @DefaultBool(false) boolean ssl,
     @DefaultLong(30000L) long timeout,
     @DefaultDouble(1.5) double retryMultiplier
-) implements Settings {}
+) implements Loadable {}
 ```
 
 ### Custom Field Names
@@ -111,8 +112,121 @@ Override automatic kebab-case conversion:
 public record CustomConfig(
     @Options(name = "app-name") String applicationName,
     @Options(name = "db-config") DatabaseConfig databaseConfiguration
-) implements Settings {}
+) implements Loadable {}
 ```
+
+### Key-based Mapping
+
+Use `@Options(isKey = true)` to create flexible YAML structures where keys become field values or where complex objects can be flattened.
+
+#### Simple Key Mapping
+
+For simple types (String, int, etc.), the YAML key becomes the field value:
+
+```java
+public record DatabaseConnection(
+    @Options(isKey = true) String name,
+    String host,
+    @DefaultInt(5432) int port
+) implements Loadable {}
+```
+
+```yaml
+# The key "production" becomes the value of the "name" field
+production:
+  host: "prod.db.example.com"
+  port: 5432
+```
+
+```java
+DatabaseConnection config = Structura.parse(yaml, DatabaseConnection.class);
+// config.name() returns "production"
+// config.host() returns "prod.db.example.com"
+// config.port() returns 5432
+```
+
+#### Complex Object Flattening
+
+For complex types (records implementing Loadable), fields are flattened to the same level:
+
+```java
+public record ServerInfo(
+    String host,
+    @DefaultInt(8080) int port,
+    @DefaultString("http") String protocol
+) implements Loadable {}
+
+public record AppConfig(
+    @Options(isKey = true) ServerInfo server,  // Complex object as key
+    String appName,
+    @DefaultBool(false) boolean debugMode
+) implements Loadable {}
+```
+
+```yaml
+# Flattened structure - server fields at root level
+host: "api.example.com"
+port: 9000
+protocol: "https"
+app-name: "MyApp"
+debug-mode: true
+```
+
+```java
+AppConfig config = Structura.parse(yaml, AppConfig.class);
+// config.server().host() returns "api.example.com"
+// config.server().port() returns 9000
+// config.server().protocol() returns "https"
+// config.appName() returns "MyApp"
+// config.debugMode() returns true
+```
+
+#### Recursive Key Mapping
+
+Key mapping works at any nesting level:
+
+```yaml
+app-config:
+  database:
+    postgres-prod:           # Simple key mapping
+      host: "db.prod.com"
+      port: 5432
+  server:
+    host: "api.prod.com"     # Complex object flattening
+    port: 8443
+    service-name: "UserAPI"
+```
+
+```java
+public record DatabaseConfig(
+    @Options(isKey = true) String dbName,  // Simple key
+    String host,
+    @DefaultInt(5432) int port
+) implements Loadable {}
+
+public record ServerInfo(
+    String host,
+    @DefaultInt(8080) int port
+) implements Loadable {}
+
+public record ServiceConfig(
+    @Options(isKey = true) ServerInfo server,  // Complex key
+    String serviceName
+) implements Loadable {}
+
+public record AppConfig(
+    DatabaseConfig database,
+    ServiceConfig server
+) implements Loadable {}
+```
+
+#### Rules and Behavior
+
+- **Simple types with `isKey`**: Requires exactly one key at that level; the key becomes the field value
+- **Complex types with `isKey`**: Fields of the complex type are extracted from the same level as other fields
+- **Works recursively**: Each nesting level can have its own key mappings
+- **Compatible with defaults**: Key fields can use default value annotations
+- **Type safety**: Automatic conversion between YAML keys and field types
 
 ### Optional Fields
 
@@ -123,7 +237,7 @@ public record FlexibleConfig(
     String required,
     @Options(optional = true) String optional,
     @Options(optional = true) @DefaultString("fallback") String optionalWithDefault
-) implements Settings {}
+) implements Loadable {}
 ```
 
 ### Collections
@@ -155,7 +269,7 @@ public record ClusterConfig(
     Set<Integer> ports,
     Map<String, String> environmentVars,
     List<DatabaseConfig> databaseConfigs
-) implements Settings {}
+) implements Loadable {}
 ```
 
 ### Configuration Enums
@@ -163,7 +277,7 @@ public record ClusterConfig(
 Create enums that can be populated with configuration data:
 
 ```java
-public enum DatabaseType implements Settings {
+public enum DatabaseType implements Loadable {
     MYSQL, POSTGRESQL, MONGODB;
     
     @Options(optional = true) public String driver;
@@ -221,14 +335,14 @@ public record ApplicationConfig(
     DatabaseConfig database,
     @Options(optional = true) List<String> features,
     @Options(optional = true) Map<String, String> customProperties
-) implements Settings {}
+) implements Loadable {}
 
 public record ServerConfig(
     @DefaultString("localhost") String host,
     @DefaultInt(8080) int port,
     @DefaultBool(false) boolean enableSsl,
     @DefaultString("/") String contextPath
-) implements Settings {}
+) implements Loadable {}
 
 public record DatabaseConfig(
     String url,
@@ -236,7 +350,7 @@ public record DatabaseConfig(
     @Options(optional = true) String password,
     @DefaultInt(10) int maxConnections,
     @DefaultLong(5000L) long connectionTimeout
-) implements Settings {}
+) implements Loadable {}
 ```
 
 ```yaml
@@ -269,25 +383,25 @@ custom-properties:
 
 ```java
 // Parse from string
-<T extends Settings> T parse(String yamlContent, Class<T> configClass)
+<T extends Loadable> T parse(String yamlContent, Class<T> configClass)
 
 // Load from file path
-<T extends Settings> T load(Path filePath, Class<T> configClass)
+<T extends Loadable> T load(Path filePath, Class<T> configClass)
 
 // Load from File object
-<T extends Settings> T load(File file, Class<T> configClass)
+<T extends Loadable> T load(File file, Class<T> configClass)
 
 // Load from resources
-<T extends Settings> T loadFromResource(String resourcePath, Class<T> configClass)
+<T extends Loadable> T loadFromResource(String resourcePath, Class<T> configClass)
 
 // Parse enum configuration
-<E extends Enum<E> & Settings> void parseEnum(String yamlContent, Class<E> enumClass)
+<E extends Enum<E> & Loadable> void parseEnum(String yamlContent, Class<E> enumClass)
 
 // Load enum from file
-<E extends Enum<E> & Settings> void loadEnum(Path filePath, Class<E> enumClass)
+<E extends Enum<E> & Loadable> void loadEnum(Path filePath, Class<E> enumClass)
 
 // Load enum from resources
-<E extends Enum<E> & Settings> void loadEnumFromResource(String resourcePath, Class<E> enumClass)
+<E extends Enum<E> & Loadable> void loadEnumFromResource(String resourcePath, Class<E> enumClass)
 ```
 
 ### Annotations
@@ -295,8 +409,9 @@ custom-properties:
 #### `@Options`
 ```java
 @Options(
-    name = "custom-field-name",    // Override field name
-    optional = true                // Mark as optional
+        name = "custom-field-name",    // Override field name
+        optional = true,               // Mark as optional
+        isKey = true                   // Use for key-based mapping
 )
 ```
 
