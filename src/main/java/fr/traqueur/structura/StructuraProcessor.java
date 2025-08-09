@@ -84,7 +84,6 @@ public class StructuraProcessor {
             Map<String, Object> settings = yaml.load(yamlString);
             E[] enumConstants = enumClass.getEnumConstants();
 
-            // Créer un mapping des noms kebab-case vers les constantes enum
             Map<String, E> enumByKebabCase = Arrays.stream(enumConstants)
                     .collect(Collectors.toMap(
                             e -> convertSnakeCaseToKebabCase(e.name()),
@@ -121,18 +120,19 @@ public class StructuraProcessor {
         }
 
         RecordComponent[] components = recordClass.getRecordComponents();
-
-        // Check if any component is marked as key
         Optional<RecordComponent> keyComponent = Arrays.stream(components)
                 .filter(this::isKeyComponent)
                 .findFirst();
 
         if (keyComponent.isPresent()) {
-            return createInstanceWithKeyMapping(data, recordClass, keyComponent.get(), prefix);
+            if (data.size() == 1) {
+                return createInstanceWithKeyMapping(data, recordClass, keyComponent.get(), prefix);
+            } else {
+                return createInstanceWithComplexKeyMapping(data, recordClass, keyComponent.get(), prefix);
+            }
         }
 
         Object[] constructorArgs = buildConstructorArguments(components, data, recordClass, prefix);
-
         return instantiateRecord(recordClass, constructorArgs);
     }
 
@@ -141,33 +141,92 @@ public class StructuraProcessor {
                 component.getAnnotation(Options.class).isKey();
     }
 
+    private Object createInstanceWithComplexKeyMapping(Map<String, Object> data, Class<?> recordClass,
+                                                       RecordComponent keyComponent, String prefix) {
+        RecordComponent[] components = recordClass.getRecordComponents();
+        Object[] args = new Object[components.length];
+
+        // Récupérer les noms de champs du key component (type complexe)
+        Set<String> keyComponentFields = getRecordFieldNames(keyComponent.getType());
+
+        // Séparer les données : champs du key component vs autres champs
+        Map<String, Object> keyComponentData = new HashMap<>();
+        Map<String, Object> otherFieldsData = new HashMap<>();
+
+        for (Map.Entry<String, Object> entry : data.entrySet()) {
+            if (keyComponentFields.contains(entry.getKey())) {
+                keyComponentData.put(entry.getKey(), entry.getValue());
+            } else {
+                otherFieldsData.put(entry.getKey(), entry.getValue());
+            }
+        }
+
+        for (int i = 0; i < components.length; i++) {
+            RecordComponent component = components[i];
+
+            if (component.getName().equals(keyComponent.getName())) {
+                args[i] = createInstance(keyComponentData, component.getType(), prefix);
+            } else {
+                Parameter parameter = getConstructorParameter(recordClass, component.getName(), i);
+                args[i] = resolveComponentValue(component, parameter, otherFieldsData, prefix);
+            }
+        }
+
+        return instantiateRecord(recordClass, args);
+    }
+
     private Object createInstanceWithKeyMapping(Map<String, Object> data, Class<?> recordClass,
                                                 RecordComponent keyComponent, String prefix) {
         RecordComponent[] components = recordClass.getRecordComponents();
 
-        if (data.size() == 1) {
-            Map.Entry<String, Object> entry = data.entrySet().iterator().next();
-            String keyValue = entry.getKey();
-            Object valueData = entry.getValue();
+        Map.Entry<String, Object> entry = data.entrySet().iterator().next();
+        String keyValue = entry.getKey();
+        Object valueData = entry.getValue();
 
-            Object[] args = new Object[components.length];
+        Object[] args = new Object[components.length];
 
-            for (int i = 0; i < components.length; i++) {
-                RecordComponent component = components[i];
-                if (component.equals(keyComponent)) {
-                    args[i] = convertValue(keyValue, component.getType(), prefix);
+        for (int i = 0; i < components.length; i++) {
+            RecordComponent component = components[i];
+
+            if (component.getName().equals(keyComponent.getName())) {
+                args[i] = convertValue(keyValue, component.getType(), prefix);
+            } else {
+                Parameter parameter = getConstructorParameter(recordClass, component.getName(), i);
+
+                if (valueData instanceof Map) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> valueMap = (Map<String, Object>) valueData;
+                    args[i] = resolveComponentValue(component, parameter, valueMap, prefix);
                 } else {
-                    Parameter parameter = getConstructorParameter(recordClass, component.getName(), i);
-                    args[i] = resolveComponentValue(component, parameter,
-                            valueData instanceof Map ? (Map<String, Object>) valueData : Collections.emptyMap(),
-                            prefix);
+                    // Si valueData n'est pas une Map, utiliser la valeur par défaut
+                    args[i] = getDefaultValue(parameter, buildPath(prefix, component.getName()));
                 }
             }
-
-            return instantiateRecord(recordClass, args);
         }
 
-        throw new StructuraException("Key-based mapping requires exactly one key-value pair");
+        return instantiateRecord(recordClass, args);
+    }
+
+    private Set<String> getRecordFieldNames(Class<?> recordClass) {
+        if (!recordClass.isRecord()) {
+            return Collections.emptySet();
+        }
+
+        RecordComponent[] components = recordClass.getRecordComponents();
+        Set<String> fieldNames = new HashSet<>();
+
+        for (int i = 0; i < components.length; i++) {
+            RecordComponent component = components[i];
+            try {
+                Parameter parameter = getConstructorParameter(recordClass, component.getName(), i);
+                String fieldName = getEffectiveFieldName(parameter, component.getName());
+                fieldNames.add(fieldName);
+            } catch (Exception e) {
+                fieldNames.add(convertCamelCaseToKebabCase(component.getName()));
+            }
+        }
+
+        return fieldNames;
     }
 
     private void injectDataIntoEnum(Enum<?> enumConstant, Object data) {
