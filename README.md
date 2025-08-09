@@ -43,7 +43,7 @@ public record AppConfig(
         @DefaultInt(8080) int port,
         @DefaultBool(false) boolean enableSsl,
         DatabaseConfig database
-) implements Settings {
+) implements Loadable {
 }
 
 public record DatabaseConfig(
@@ -51,7 +51,7 @@ public record DatabaseConfig(
         @DefaultInt(5432) int port,
         String database,
         @DefaultString("postgres") String username
-) implements Settings {
+) implements Loadable {
 }
 ```
 
@@ -101,7 +101,7 @@ public record ServerConfig(
     @DefaultBool(false) boolean ssl,
     @DefaultLong(30000L) long timeout,
     @DefaultDouble(1.5) double retryMultiplier
-) implements Settings {}
+) implements Loadable {}
 ```
 
 ### Custom Field Names
@@ -112,7 +112,7 @@ Override automatic kebab-case conversion:
 public record CustomConfig(
     @Options(name = "app-name") String applicationName,
     @Options(name = "db-config") DatabaseConfig databaseConfiguration
-) implements Settings {}
+) implements Loadable {}
 ```
 
 ### Key-based Mapping
@@ -237,7 +237,7 @@ public record FlexibleConfig(
     String required,
     @Options(optional = true) String optional,
     @Options(optional = true) @DefaultString("fallback") String optionalWithDefault
-) implements Settings {}
+) implements Loadable {}
 ```
 
 ### Collections
@@ -269,7 +269,7 @@ public record ClusterConfig(
     Set<Integer> ports,
     Map<String, String> environmentVars,
     List<DatabaseConfig> databaseConfigs
-) implements Settings {}
+) implements Loadable {}
 ```
 
 ### Configuration Enums
@@ -277,7 +277,7 @@ public record ClusterConfig(
 Create enums that can be populated with configuration data:
 
 ```java
-public enum DatabaseType implements Settings {
+public enum DatabaseType implements Loadable {
     MYSQL, POSTGRESQL, MONGODB;
     
     @Options(optional = true) public String driver;
@@ -335,14 +335,14 @@ public record ApplicationConfig(
     DatabaseConfig database,
     @Options(optional = true) List<String> features,
     @Options(optional = true) Map<String, String> customProperties
-) implements Settings {}
+) implements Loadable {}
 
 public record ServerConfig(
     @DefaultString("localhost") String host,
     @DefaultInt(8080) int port,
     @DefaultBool(false) boolean enableSsl,
     @DefaultString("/") String contextPath
-) implements Settings {}
+) implements Loadable {}
 
 public record DatabaseConfig(
     String url,
@@ -350,7 +350,7 @@ public record DatabaseConfig(
     @Options(optional = true) String password,
     @DefaultInt(10) int maxConnections,
     @DefaultLong(5000L) long connectionTimeout
-) implements Settings {}
+) implements Loadable {}
 ```
 
 ```yaml
@@ -383,25 +383,25 @@ custom-properties:
 
 ```java
 // Parse from string
-<T extends Settings> T parse(String yamlContent, Class<T> configClass)
+<T extends Loadable> T parse(String yamlContent, Class<T> configClass)
 
 // Load from file path
-<T extends Settings> T load(Path filePath, Class<T> configClass)
+<T extends Loadable> T load(Path filePath, Class<T> configClass)
 
 // Load from File object
-<T extends Settings> T load(File file, Class<T> configClass)
+<T extends Loadable> T load(File file, Class<T> configClass)
 
 // Load from resources
-<T extends Settings> T loadFromResource(String resourcePath, Class<T> configClass)
+<T extends Loadable> T loadFromResource(String resourcePath, Class<T> configClass)
 
 // Parse enum configuration
-<E extends Enum<E> & Settings> void parseEnum(String yamlContent, Class<E> enumClass)
+<E extends Enum<E> & Loadable> void parseEnum(String yamlContent, Class<E> enumClass)
 
 // Load enum from file
-<E extends Enum<E> & Settings> void loadEnum(Path filePath, Class<E> enumClass)
+<E extends Enum<E> & Loadable> void loadEnum(Path filePath, Class<E> enumClass)
 
 // Load enum from resources
-<E extends Enum<E> & Settings> void loadEnumFromResource(String resourcePath, Class<E> enumClass)
+<E extends Enum<E> & Loadable> void loadEnumFromResource(String resourcePath, Class<E> enumClass)
 ```
 
 ### Annotations
