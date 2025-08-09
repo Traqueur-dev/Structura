@@ -615,4 +615,86 @@ class StructuraProcessorTest {
             assertNull(DatabaseType.MYSQL.properties);
         }
     }
+
+    @Nested
+    @DisplayName("isKey Feature - 2 Main Cases")
+    class IsKeyFeatureTest {
+
+        @Test
+        @DisplayName("Cas 1 : Simple key mapping")
+        void shouldHandleSimpleKeyMapping() {
+            String yaml = """
+            monobjet:
+              value-int: 42
+              value-double: 3.14
+            """;
+
+            MonObjet config = processor.parse(yaml, MonObjet.class);
+
+            assertNotNull(config);
+            assertEquals("monobjet", config.id());
+            assertEquals(42, config.valueInt());
+            assertEquals(3.14, config.valueDouble());
+        }
+
+        @Test
+        @DisplayName("Cas 2 : Complex object as key")
+        void shouldHandleComplexObjectAsKey() {
+            String yaml = """
+            host: "api.example.com"
+            port: 9000
+            protocol: "https"
+            app-name: "MyApp"
+            debug-mode: true
+            """;
+
+            ComplexKeyConfig config = processor.parse(yaml, ComplexKeyConfig.class);
+
+            assertNotNull(config);
+
+            assertNotNull(config.server());
+            assertEquals("api.example.com", config.server().host());
+            assertEquals(9000, config.server().port());
+            assertEquals("https", config.server().protocol());
+
+            // Vérifier que les autres champs ont leurs valeurs
+            assertEquals("MyApp", config.appName());
+            assertTrue(config.debugMode());
+        }
+
+        @Test
+        @DisplayName("Cas 2 with partial key and default values")
+        void shouldHandleComplexKeyWithDefaults() {
+            String yaml = """
+            host: "localhost"
+            app-name: "TestApp"
+            """;
+
+            ComplexKeyConfig config = processor.parse(yaml, ComplexKeyConfig.class);
+
+            assertNotNull(config);
+            assertNotNull(config.server());
+            assertEquals("localhost", config.server().host());
+            assertEquals(8080, config.server().port());
+            assertEquals("http", config.server().protocol());
+            assertEquals("TestApp", config.appName());
+            assertFalse(config.debugMode());
+        }
+
+        @Test
+        @DisplayName("With empty values")
+        void shouldHandleSimpleKeyWithEmptyData() {
+            String yaml = """
+            testkey: {}
+            """;
+
+            MonObjet config = processor.parse(yaml, MonObjet.class);
+
+            assertNotNull(config);
+            assertEquals("testkey", config.id());
+            assertEquals(0, config.valueInt());
+            assertEquals(0.0, config.valueDouble());
+        }
+    }
+
 }

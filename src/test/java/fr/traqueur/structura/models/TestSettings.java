@@ -15,6 +15,24 @@ import java.util.Set;
  */
 public class TestSettings {
 
+    public record MonObjet(
+            @Options(isKey = true) String id,
+            @DefaultInt(0) int valueInt,
+            @DefaultDouble(0.0) double valueDouble
+    ) implements Loadable {}
+
+    public record ServerInfo(
+            String host,
+            @DefaultInt(8080) int port,
+            @DefaultString("http") String protocol
+    ) implements Loadable {}
+
+    public record ComplexKeyConfig(
+            @Options(isKey = true) ServerInfo server,
+            String appName,
+            @DefaultBool(false) boolean debugMode
+    ) implements Loadable {}
+
     // === SIMPLE CONFIGURATION ===
     public record SimpleConfig(
             String name,
