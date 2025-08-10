@@ -21,7 +21,7 @@ public class Validator {
     public static final Validator INSTANCE = new Validator();
 
     /**
-     * Singleton instance of the Validator.
+     * Private constructor to enforce singleton pattern.
      */
     private Validator() {}
 
@@ -37,7 +37,7 @@ public class Validator {
         if (instance == null) return;
 
         Class<?> clazz = instance.getClass();
-        
+
         if (clazz.isRecord()) {
             validateRecord(instance, path);
         } else if (clazz.isEnum()) {
@@ -46,9 +46,7 @@ public class Validator {
     }
 
     /**
-     * Validates the given instance based on its type.
-     * If the instance is a record, it validates each field of the record.
-     * If the instance is an enum, it validates each field of the enum.
+     * Validates a record instance by checking each of its components.
      *
      * @param record The record instance to validate.
      * @param path The path for error messages.
@@ -63,8 +61,8 @@ public class Validator {
                 Method accessor = component.getAccessor();
                 Object value = accessor.invoke(record);
                 String fieldPath = path.isEmpty() ? component.getName() : path + "." + component.getName();
-                
-                validateField(value, component.getType(), fieldPath);
+
+                validateField(value, component, fieldPath);
 
                 if (value != null && isSettingsType(component.getType())) {
                     validate(value, fieldPath);
@@ -95,14 +93,21 @@ public class Validator {
                 field.setAccessible(true);
                 Object value = field.get(enumInstance);
                 String fieldPath = path.isEmpty() ? field.getName() : path + "." + field.getName();
-                
-                validateField(value, field.getType(), fieldPath);
+
+                validateField(value, field, fieldPath);
             } catch (IllegalAccessException e) {
                 throw new ValidationException("Failed to validate enum field: " + field.getName(), e);
             }
         }
     }
 
+    /**
+     * Validates a field with its validation annotations.
+     *
+     * @param value The field value
+     * @param element The annotated element (RecordComponent or Field)
+     * @param path The path for error messages
+     */
     private void validateField(Object value, AnnotatedElement element, String path) {
         if (value == null) {
             return;
@@ -115,47 +120,59 @@ public class Validator {
         validateSize(value, element, path);
     }
 
+    /**
+     * Validates minimum value constraint.
+     */
     private void validateMin(Object value, AnnotatedElement element, String path) {
         if (!element.isAnnotationPresent(Min.class)) return;
-        
+
         Min min = element.getAnnotation(Min.class);
         long numericValue = extractNumericValue(value, path);
-        
+
         if (numericValue < min.value()) {
-            throw new ValidationException(formatMessage(min.message(), 
-                Map.of("value", String.valueOf(min.value()), "path", path)));
+            throw new ValidationException(formatMessage(min.message(),
+                    Map.of("value", String.valueOf(min.value()), "path", path)));
         }
     }
 
+    /**
+     * Validates maximum value constraint.
+     */
     private void validateMax(Object value, AnnotatedElement element, String path) {
         if (!element.isAnnotationPresent(Max.class)) return;
-        
+
         Max max = element.getAnnotation(Max.class);
         long numericValue = extractNumericValue(value, path);
-        
+
         if (numericValue > max.value()) {
-            throw new ValidationException(formatMessage(max.message(), 
-                Map.of("value", String.valueOf(max.value()), "path", path)));
+            throw new ValidationException(formatMessage(max.message(),
+                    Map.of("value", String.valueOf(max.value()), "path", path)));
         }
     }
 
+    /**
+     * Validates pattern constraint.
+     */
     private void validatePattern(Object value, AnnotatedElement element, String path) {
         if (!element.isAnnotationPresent(Pattern.class)) return;
-        
+
         Pattern annotation = element.getAnnotation(Pattern.class);
         String stringValue = value.toString();
-        
+
         if (!java.util.regex.Pattern.matches(annotation.value(), stringValue)) {
-            throw new ValidationException(formatMessage(annotation.message(), 
-                Map.of("value", annotation.value(), "path", path)));
+            throw new ValidationException(formatMessage(annotation.message(),
+                    Map.of("value", annotation.value(), "path", path)));
         }
     }
 
+    /**
+     * Validates not empty constraint.
+     */
     private void validateNotEmpty(Object value, AnnotatedElement element, String path) {
         if (!element.isAnnotationPresent(NotEmpty.class)) return;
-        
+
         NotEmpty notEmpty = element.getAnnotation(NotEmpty.class);
-        
+
         if (value instanceof String str && str.isEmpty()) {
             throw new ValidationException(formatMessage(notEmpty.message(), Map.of("path", path)));
         } else if (value instanceof Collection<?> coll && coll.isEmpty()) {
@@ -165,20 +182,26 @@ public class Validator {
         }
     }
 
+    /**
+     * Validates size constraint.
+     */
     private void validateSize(Object value, AnnotatedElement element, String path) {
         if (!element.isAnnotationPresent(Size.class)) return;
-        
+
         Size size = element.getAnnotation(Size.class);
         int actualSize = extractSize(value, path);
-        
+
         if (actualSize < size.min() || actualSize > size.max()) {
-            throw new ValidationException(formatMessage(size.message(), 
-                Map.of("min", String.valueOf(size.min()), 
-                       "max", String.valueOf(size.max()), 
-                       "path", path)));
+            throw new ValidationException(formatMessage(size.message(),
+                    Map.of("min", String.valueOf(size.min()),
+                            "max", String.valueOf(size.max()),
+                            "path", path)));
         }
     }
 
+    /**
+     * Extracts numeric value from an object for min/max validation.
+     */
     private long extractNumericValue(Object value, String path) {
         if (value instanceof Number num) {
             return num.longValue();
@@ -186,19 +209,28 @@ public class Validator {
         throw new ValidationException("Cannot validate numeric constraint on non-numeric field: " + path);
     }
 
+    /**
+     * Extracts size from an object for size validation.
+     */
     private int extractSize(Object value, String path) {
         if (value instanceof String str) return str.length();
         if (value instanceof Collection<?> coll) return coll.size();
         if (value instanceof Map<?, ?> map) return map.size();
         if (value.getClass().isArray()) return Array.getLength(value);
-        
+
         throw new ValidationException("Cannot validate size constraint on field: " + path);
     }
 
+    /**
+     * Checks if a type is a settings record that implements Loadable.
+     */
     private boolean isSettingsType(Class<?> type) {
         return type.isRecord() && Loadable.class.isAssignableFrom(type);
     }
 
+    /**
+     * Formats a message template by replacing placeholders with actual values.
+     */
     private String formatMessage(String template, Map<String, String> variables) {
         String result = template;
         for (Map.Entry<String, String> entry : variables.entrySet()) {
