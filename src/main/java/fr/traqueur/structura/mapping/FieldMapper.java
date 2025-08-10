@@ -1,7 +1,7 @@
 package fr.traqueur.structura.mapping;
 
 import fr.traqueur.structura.annotations.Options;
-import fr.traqueur.structura.registries.DefaultValueRegistry;
+import fr.traqueur.structura.DefaultValueRegistry;
 import fr.traqueur.structura.exceptions.StructuraException;
 
 import java.lang.reflect.Parameter;

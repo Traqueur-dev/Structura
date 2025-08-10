@@ -1,14 +1,12 @@
 package fr.traqueur.structura.conversion;
 
-import fr.traqueur.structura.annotations.Polymorphic;
-import fr.traqueur.structura.annotations.defaults.DefaultBool;
 import fr.traqueur.structura.annotations.defaults.DefaultInt;
 import fr.traqueur.structura.annotations.defaults.DefaultString;
+
 import fr.traqueur.structura.api.Loadable;
 import fr.traqueur.structura.exceptions.StructuraException;
 import fr.traqueur.structura.factory.RecordInstanceFactory;
 import fr.traqueur.structura.mapping.FieldMapper;
-import fr.traqueur.structura.registries.PolymorphicRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -20,109 +18,25 @@ import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@DisplayName("ValueConverter - Complete Type Conversion Tests")
+@DisplayName("ValueConverter - Type Conversion Logic Tests")
 class ValueConverterTest {
 
     private ValueConverter valueConverter;
 
     @BeforeEach
     void setUp() {
-        clearAllRegistries();
         FieldMapper fieldMapper = new FieldMapper();
         RecordInstanceFactory recordFactory = new RecordInstanceFactory(fieldMapper);
         valueConverter = new ValueConverter(recordFactory);
         recordFactory.setValueConverter(valueConverter);
-        setupPolymorphicRegistries();
     }
 
-    private void clearAllRegistries() {
-        try {
-            var field = PolymorphicRegistry.class.getDeclaredField("REGISTRIES");
-            field.setAccessible(true);
-            ((java.util.Map<?, ?>) field.get(null)).clear();
-        } catch (Exception e) {
-            fail("Failed to clear registries: " + e.getMessage());
-        }
-    }
-
-    private void setupPolymorphicRegistries() {
-        // Setup database registry
-        PolymorphicRegistry.create(TestDatabaseConfig.class, registry -> {
-            registry.register("mysql", TestMySQLConfig.class);
-            registry.register("postgres", TestPostgreSQLConfig.class);
-        });
-
-        // Setup payment registry
-        PolymorphicRegistry.create(TestPaymentProvider.class, registry -> {
-            registry.register("stripe", TestStripeProvider.class);
-            registry.register("paypal", TestPayPalProvider.class);
-        });
-    }
-
-    // Basic test records
     public record SimpleRecord(String name, int value) implements Loadable {}
     public record RecordWithDefaults(
             @DefaultString("defaultName") String name,
             @DefaultInt(0) int value
     ) implements Loadable {}
     public enum TestEnum { VALUE1, VALUE2, VALUE3 }
-
-    // Polymorphic interfaces and implementations
-    @Polymorphic(key = "type")
-    public interface TestDatabaseConfig extends Loadable {
-        String getHost();
-        int getPort();
-    }
-
-    @Polymorphic(key = "provider")
-    public interface TestPaymentProvider extends Loadable {
-        String getName();
-        boolean isEnabled();
-    }
-
-    public record TestMySQLConfig(
-            @DefaultString("localhost") String host,
-            @DefaultInt(3306) int port,
-            @DefaultString("mysql") String driver
-    ) implements TestDatabaseConfig {
-        @Override public String getHost() { return host; }
-        @Override public int getPort() { return port; }
-    }
-
-    public record TestPostgreSQLConfig(
-            @DefaultString("localhost") String host,
-            @DefaultInt(5432) int port,
-            @DefaultString("postgresql") String driver
-    ) implements TestDatabaseConfig {
-        @Override public String getHost() { return host; }
-        @Override public int getPort() { return port; }
-    }
-
-    public record TestStripeProvider(
-            @DefaultString("Stripe") String name,
-            @DefaultBool(true) boolean enabled,
-            @DefaultString("sk_test_") String apiKey
-    ) implements TestPaymentProvider {
-        @Override public String getName() { return name; }
-        @Override public boolean isEnabled() { return enabled; }
-    }
-
-    public record TestPayPalProvider(
-            @DefaultString("PayPal") String name,
-            @DefaultBool(false) boolean enabled,
-            @DefaultString("client_id_") String clientId
-    ) implements TestPaymentProvider {
-        @Override public String getName() { return name; }
-        @Override public boolean isEnabled() { return enabled; }
-    }
-
-    // Configuration using polymorphic interfaces
-    public record TestConfigWithPolymorphic(
-            String appName,
-            TestDatabaseConfig database,
-            List<TestDatabaseConfig> backupDatabases,
-            TestPaymentProvider paymentProvider
-    ) implements Loadable {}
 
     @Nested
     @DisplayName("Complex Type Conversions")
@@ -322,144 +236,6 @@ class ValueConverterTest {
     }
 
     @Nested
-    @DisplayName("Polymorphic Type Conversions")
-    class PolymorphicTypeConversionsTest {
-
-        @Test
-        @DisplayName("Should convert polymorphic interface to concrete implementation")
-        void shouldConvertPolymorphicInterfaceToConcrete() {
-            Map<String, Object> mysqlData = Map.of(
-                    "type", "mysql",
-                    "host", "prod.mysql.com",
-                    "port", 3306,
-                    "driver", "com.mysql.cj.jdbc.Driver"
-            );
-
-            TestDatabaseConfig result = (TestDatabaseConfig) valueConverter.convert(
-                    mysqlData, TestDatabaseConfig.class, ""
-            );
-
-            assertInstanceOf(TestMySQLConfig.class, result);
-            TestMySQLConfig mysql = (TestMySQLConfig) result;
-            assertEquals("prod.mysql.com", mysql.host());
-            assertEquals(3306, mysql.port());
-            assertEquals("com.mysql.cj.jdbc.Driver", mysql.driver());
-        }
-
-        @Test
-        @DisplayName("Should handle different polymorphic key names")
-        void shouldHandleDifferentPolymorphicKeyNames() {
-            Map<String, Object> stripeData = Map.of(
-                    "provider", "stripe", // Different key name
-                    "name", "Production Stripe",
-                    "enabled", true,
-                    "api-key", "sk_live_123"
-            );
-
-            TestPaymentProvider result = (TestPaymentProvider) valueConverter.convert(
-                    stripeData, TestPaymentProvider.class, ""
-            );
-
-            assertInstanceOf(TestStripeProvider.class, result);
-            TestStripeProvider stripe = (TestStripeProvider) result;
-            assertEquals("Production Stripe", stripe.name());
-            assertTrue(stripe.enabled());
-            assertEquals("sk_live_123", stripe.apiKey());
-        }
-
-        @Test
-        @DisplayName("Should use default values in polymorphic implementations")
-        void shouldUseDefaultValuesInPolymorphicImplementations() {
-            Map<String, Object> minimalData = Map.of(
-                    "type", "postgres",
-                    "host", "custom.postgres.com"
-            );
-
-            TestDatabaseConfig result = (TestDatabaseConfig) valueConverter.convert(
-                    minimalData, TestDatabaseConfig.class, ""
-            );
-
-            assertInstanceOf(TestPostgreSQLConfig.class, result);
-            TestPostgreSQLConfig postgres = (TestPostgreSQLConfig) result;
-            assertEquals("custom.postgres.com", postgres.host());
-            assertEquals(5432, postgres.port()); // Default value
-            assertEquals("postgresql", postgres.driver()); // Default value
-        }
-
-        @Test
-        @DisplayName("Should convert collections of polymorphic interfaces")
-        void shouldConvertCollectionsOfPolymorphicInterfaces() throws Exception {
-            List<Map<String, Object>> databaseList = List.of(
-                    Map.of("type", "mysql", "host", "mysql1.com", "port", 3306),
-                    Map.of("type", "postgres", "host", "postgres1.com", "port", 5432)
-            );
-
-            Type listType = getClass().getMethod("getDatabaseConfigList").getGenericReturnType();
-
-            @SuppressWarnings("unchecked")
-            List<TestDatabaseConfig> result = (List<TestDatabaseConfig>) valueConverter.convert(
-                    databaseList, listType, List.class, ""
-            );
-
-            assertEquals(2, result.size());
-            assertInstanceOf(TestMySQLConfig.class, result.get(0));
-            assertInstanceOf(TestPostgreSQLConfig.class, result.get(1));
-
-            TestMySQLConfig mysql = (TestMySQLConfig) result.get(0);
-            assertEquals("mysql1.com", mysql.host());
-            assertEquals(3306, mysql.port());
-
-            TestPostgreSQLConfig postgres = (TestPostgreSQLConfig) result.get(1);
-            assertEquals("postgres1.com", postgres.host());
-            assertEquals(5432, postgres.port());
-        }
-
-        @Test
-        @DisplayName("Should throw exception for missing polymorphic key")
-        void shouldThrowExceptionForMissingPolymorphicKey() {
-            Map<String, Object> dataWithoutType = Map.of(
-                    "host", "some.host.com",
-                    "port", 3306
-            );
-
-            StructuraException exception = assertThrows(StructuraException.class, () -> {
-                valueConverter.convert(dataWithoutType, TestDatabaseConfig.class, "test");
-            });
-
-            assertTrue(exception.getMessage().contains("requires key 'type'"));
-        }
-
-        @Test
-        @DisplayName("Should throw exception for unknown polymorphic type")
-        void shouldThrowExceptionForUnknownPolymorphicType() {
-            Map<String, Object> dataWithUnknownType = Map.of(
-                    "type", "oracle",
-                    "host", "oracle.host.com"
-            );
-
-            StructuraException exception = assertThrows(StructuraException.class, () -> {
-                valueConverter.convert(dataWithUnknownType, TestDatabaseConfig.class, "test");
-            });
-
-            assertTrue(exception.getMessage().contains("No registered type found for oracle"));
-            assertTrue(exception.getMessage().contains("Available types: mysql, postgres"));
-        }
-
-        @Test
-        @DisplayName("Should throw exception for non-Map polymorphic data")
-        void shouldThrowExceptionForNonMapPolymorphicData() {
-            StructuraException exception = assertThrows(StructuraException.class, () -> {
-                valueConverter.convert("invalid-string", TestDatabaseConfig.class, "test");
-            });
-
-            assertTrue(exception.getMessage().contains("requires a Map value for conversion"));
-        }
-
-        // Helper method for reflection
-        public List<TestDatabaseConfig> getDatabaseConfigList() { return null; }
-    }
-
-    @Nested
     @DisplayName("Record and Edge Cases")
     class RecordAndEdgeCasesTest {
 
@@ -528,50 +304,6 @@ class ValueConverterTest {
             assertThrows(Exception.class, () ->
                     valueConverter.convert("not_a_double", double.class, "test")
             );
-        }
-
-        @Test
-        @DisplayName("Should handle complex nested polymorphic structures")
-        void shouldHandleComplexNestedPolymorphicStructures() {
-            Map<String, Object> complexConfig = Map.of(
-                    "app-name", "ComplexApp",
-                    "database", Map.of(
-                            "type", "mysql",
-                            "host", "primary.mysql.com",
-                            "port", 3306
-                    ),
-                    "backup-databases", List.of(
-                            Map.of("type", "postgres", "host", "backup1.postgres.com"),
-                            Map.of("type", "mysql", "host", "backup2.mysql.com", "port", 3307)
-                    ),
-                    "payment-provider", Map.of(
-                            "provider", "stripe",
-                            "name", "Production Stripe",
-                            "enabled", true
-                    )
-            );
-
-            TestConfigWithPolymorphic result = (TestConfigWithPolymorphic) valueConverter.convert(
-                    complexConfig, TestConfigWithPolymorphic.class, ""
-            );
-
-            assertEquals("ComplexApp", result.appName());
-
-            // Verify main database
-            assertInstanceOf(TestMySQLConfig.class, result.database());
-            TestMySQLConfig primaryDb = (TestMySQLConfig) result.database();
-            assertEquals("primary.mysql.com", primaryDb.host());
-
-            // Verify backup databases
-            assertEquals(2, result.backupDatabases().size());
-            assertInstanceOf(TestPostgreSQLConfig.class, result.backupDatabases().get(0));
-            assertInstanceOf(TestMySQLConfig.class, result.backupDatabases().get(1));
-
-            // Verify payment provider
-            assertInstanceOf(TestStripeProvider.class, result.paymentProvider());
-            TestStripeProvider stripe = (TestStripeProvider) result.paymentProvider();
-            assertEquals("Production Stripe", stripe.name());
-            assertTrue(stripe.enabled());
         }
     }
 }

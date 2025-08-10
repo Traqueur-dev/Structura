@@ -5,7 +5,6 @@ import fr.traqueur.structura.conversion.ValueConverter;
 import fr.traqueur.structura.exceptions.StructuraException;
 import fr.traqueur.structura.factory.RecordInstanceFactory;
 import fr.traqueur.structura.mapping.FieldMapper;
-import fr.traqueur.structura.registries.DefaultValueRegistry;
 import fr.traqueur.structura.validation.Validator;
 import org.yaml.snakeyaml.Yaml;
 
@@ -14,6 +13,7 @@ import java.lang.reflect.Modifier;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Collectors;
 
 /**

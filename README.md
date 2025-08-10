@@ -10,7 +10,6 @@
 - 🏗️ **Nested configurations**: Support for complex, hierarchical settings
 - 📋 **Collections support**: Lists, Sets, and Maps with generic type safety
 - 🔄 **Enum integration**: Special support for configuration enums
-- 🎭 **Polymorphic interfaces**: Automatic type resolution based on YAML keys for plugin systems
 - 🔀 **Automatic type conversion**: Smart conversion between compatible types
 - 🎨 **Kebab-case mapping**: Automatic camelCase ↔ kebab-case field name conversion
 - ⚡ **Zero dependencies**: Only optional SnakeYAML for YAML parsing
@@ -182,127 +181,52 @@ AppConfig config = Structura.parse(yaml, AppConfig.class);
 // config.debugMode() returns true
 ```
 
-### Polymorphic Interfaces 🎭
+#### Recursive Key Mapping
 
-**NEW!** Structura supports polymorphic configuration through interfaces and registries, perfect for plugin systems, database drivers, or any scenario where you need different implementations based on YAML content.
+Key mapping works at any nesting level:
 
-#### Setting Up Polymorphic Interfaces
-
-1. **Define your polymorphic interface**:
-
-```java
-@Polymorphic(key = "type")  // Field name that determines the implementation
-public interface DatabaseConfig extends Loadable {
-    String getHost();
-    int getPort();
-}
+```yaml
+app-config:
+  database:
+    postgres-prod:           # Simple key mapping
+      host: "db.prod.com"
+      port: 5432
+  server:
+    host: "api.prod.com"     # Complex object flattening
+    port: 8443
+    service-name: "UserAPI"
 ```
 
-2. **Create concrete implementations**:
-
 ```java
-public record MySQLConfig(
-    @DefaultString("localhost") String host,
-    @DefaultInt(3306) int port,
-    @DefaultString("mysql") String driver,
-    @DefaultBool(true) boolean useSSL
-) implements DatabaseConfig {
-    @Override public String getHost() { return host; }
-    @Override public int getPort() { return port; }
-}
+public record DatabaseConfig(
+    @Options(isKey = true) String dbName,  // Simple key
+    String host,
+    @DefaultInt(5432) int port
+) implements Loadable {}
 
-public record PostgreSQLConfig(
-    @DefaultString("localhost") String host,
-    @DefaultInt(5432) int port,
-    @DefaultString("postgresql") String driver,
-    @DefaultBool(false) boolean ssl
-) implements DatabaseConfig {
-    @Override public String getHost() { return host; }
-    @Override public int getPort() { return port; }
-}
+public record ServerInfo(
+    String host,
+    @DefaultInt(8080) int port
+) implements Loadable {}
 
-public record MongoConfig(
-    @DefaultString("localhost") String host,
-    @DefaultInt(27017) int port,
-    @DefaultString("admin") String authDatabase
-) implements DatabaseConfig {
-    @Override public String getHost() { return host; }
-    @Override public int getPort() { return port; }
-}
-```
+public record ServiceConfig(
+    @Options(isKey = true) ServerInfo server,  // Complex key
+    String serviceName
+) implements Loadable {}
 
-3. **Register implementations**:
-
-```java
-// One-time setup (typically in a static block or startup code)
-PolymorphicRegistry.create(DatabaseConfig.class, registry -> {
-    registry.register("mysql", MySQLConfig.class);
-    registry.register("postgresql", PostgreSQLConfig.class);
-    registry.register("mongodb", MongoConfig.class);
-});
-```
-
-4. **Use in your configuration**:
-
-```java
 public record AppConfig(
-    String appName,
-    DatabaseConfig database,              // Polymorphic interface
-    List<DatabaseConfig> backupDatabases  // Collections work too!
+    DatabaseConfig database,
+    ServiceConfig server
 ) implements Loadable {}
 ```
 
-#### YAML Configuration
+#### Rules and Behavior
 
-```yaml
-app-name: "MyApp"
-database:
-  type: "mysql"              # This determines the implementation
-  host: "prod.mysql.com"
-  port: 3306
-  use-ssl: true
-  driver: "com.mysql.cj.jdbc.Driver"
-
-backup-databases:
-  - type: "postgresql"       # Different implementation
-    host: "backup.postgres.com"
-    port: 5432
-    ssl: true
-  - type: "mongodb"          # Another implementation
-    host: "backup.mongo.com"
-    port: 27017
-    auth-database: "backup"
-```
-
-#### Automatic Type Resolution
-
-```java
-AppConfig config = Structura.parse(yaml, AppConfig.class);
-
-// config.database() is automatically a MySQLConfig instance
-MySQLConfig mysql = (MySQLConfig) config.database();
-System.out.println("MySQL driver: " + mysql.driver());
-
-// config.backupDatabases() contains PostgreSQLConfig and MongoConfig instances
-PostgreSQLConfig postgres = (PostgreSQLConfig) config.backupDatabases().get(0);
-MongoConfig mongo = (MongoConfig) config.backupDatabases().get(1);
-```
-
-#### Advanced Polymorphic Features
-
-- **Custom key names**: Use `@Polymorphic(key = "provider")` for different field names
-- **Auto-naming**: `registry.register(MySQLConfig.class)` uses lowercased class name
-- **Type safety**: Compile-time guarantees that implementations match the interface
-- **Error handling**: Clear messages showing available types when resolution fails
-- **Default values**: All `@Default*` annotations work in polymorphic implementations
-
-#### Use Cases
-
-- **Database drivers**: Switch between MySQL, PostgreSQL, MongoDB based on configuration
-- **Payment providers**: Different implementations for Stripe, PayPal, etc.
-- **Logging backends**: File, console, remote logging with different configurations
-- **Plugin systems**: Load different plugin implementations based on type
-- **Cloud providers**: AWS, Azure, GCP with provider-specific settings
+- **Simple types with `isKey`**: Requires exactly one key at that level; the key becomes the field value
+- **Complex types with `isKey`**: Fields of the complex type are extracted from the same level as other fields
+- **Works recursively**: Each nesting level can have its own key mappings
+- **Compatible with defaults**: Key fields can use default value annotations
+- **Type safety**: Automatic conversion between YAML keys and field types
 
 ### Optional Fields
 
@@ -408,7 +332,7 @@ public record ApplicationConfig(
     @DefaultString("MyApplication") String appName,
     @DefaultString("1.0.0") String version,
     ServerConfig server,
-    DatabaseConfig database,      // Polymorphic interface
+    DatabaseConfig database,
     @Options(optional = true) List<String> features,
     @Options(optional = true) Map<String, String> customProperties
 ) implements Loadable {}
@@ -420,7 +344,13 @@ public record ServerConfig(
     @DefaultString("/") String contextPath
 ) implements Loadable {}
 
-// DatabaseConfig is the polymorphic interface from examples above
+public record DatabaseConfig(
+    String url,
+    String username,
+    @Options(optional = true) String password,
+    @DefaultInt(10) int maxConnections,
+    @DefaultLong(5000L) long connectionTimeout
+) implements Loadable {}
 ```
 
 ```yaml
@@ -433,12 +363,11 @@ server:
   enable-ssl: true
   context-path: "/api/v1"
 database:
-  type: "postgresql"  # Polymorphic resolution
-  host: "db.example.com"
-  port: 5432
-  database: "myapp"
+  url: "jdbc:postgresql://db.example.com:5432/myapp"
   username: "app_user"
   password: "secure_password"
+  max-connections: 20
+  connection-timeout: 10000
 features:
   - "feature-a"
   - "feature-b"
@@ -446,62 +375,6 @@ features:
 custom-properties:
   cache.ttl: "3600"
   logging.level: "INFO"
-```
-
-### Plugin System Example
-
-```java
-@Polymorphic(key = "provider")
-public interface PaymentProvider extends Loadable {
-    String getName();
-    boolean processPayment(BigDecimal amount);
-}
-
-public record StripeProvider(
-    @DefaultString("Stripe") String name,
-    String apiKey,
-    @DefaultBool(false) boolean testMode
-) implements PaymentProvider {
-    @Override public String getName() { return name; }
-    @Override public boolean processPayment(BigDecimal amount) { /* implementation */ }
-}
-
-public record PayPalProvider(
-    @DefaultString("PayPal") String name,
-    String clientId,
-    String clientSecret
-) implements PaymentProvider {
-    @Override public String getName() { return name; }
-    @Override public boolean processPayment(BigDecimal amount) { /* implementation */ }
-}
-
-// Setup
-PolymorphicRegistry.create(PaymentProvider.class, registry -> {
-    registry.register("stripe", StripeProvider.class);
-    registry.register("paypal", PayPalProvider.class);
-});
-
-// Configuration
-public record PaymentConfig(
-    PaymentProvider primaryProvider,
-    List<PaymentProvider> fallbackProviders
-) implements Loadable {}
-```
-
-```yaml
-# payment.yml
-primary-provider:
-  provider: "stripe"
-  api-key: "sk_live_..."
-  test-mode: false
-
-fallback-providers:
-  - provider: "paypal"
-    client-id: "paypal_client_..."
-    client-secret: "paypal_secret_..."
-  - provider: "stripe"
-    api-key: "sk_test_..."
-    test-mode: true
 ```
 
 ## 🎮 API Reference
@@ -531,29 +404,7 @@ fallback-providers:
 <E extends Enum<E> & Loadable> void loadEnumFromResource(String resourcePath, Class<E> enumClass)
 ```
 
-### Polymorphic Registry API
-
-```java
-// Create and configure a registry
-PolymorphicRegistry.create(InterfaceClass.class, registry -> {
-    registry.register("key", ImplementationClass.class);
-    registry.register(AutoNamedClass.class); // Uses lowercased class name
-});
-
-// Retrieve an existing registry
-PolymorphicRegistry<InterfaceClass> registry = PolymorphicRegistry.get(InterfaceClass.class);
-
-// Check available implementations
-Set<String> availableTypes = registry.availableNames();
-Optional<Class<? extends InterfaceClass>> impl = registry.get("key");
-```
-
 ### Annotations
-
-#### `@Polymorphic`
-```java
-@Polymorphic(key = "type")  // Default: "type"
-```
 
 #### `@Options`
 ```java
@@ -592,8 +443,6 @@ Common error scenarios:
 - Invalid YAML syntax
 - File not found
 - Invalid enum values
-- **Unknown polymorphic types with available options listed**
-- **Missing polymorphic type keys**
 
 ## 🧪 Testing
 
