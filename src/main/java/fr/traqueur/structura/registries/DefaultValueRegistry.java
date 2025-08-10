@@ -1,4 +1,4 @@
-package fr.traqueur.structura;
+package fr.traqueur.structura.registries;
 
 import fr.traqueur.structura.annotations.defaults.*;
 

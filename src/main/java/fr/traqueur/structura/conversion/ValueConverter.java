@@ -1,8 +1,10 @@
 package fr.traqueur.structura.conversion;
 
+import fr.traqueur.structura.annotations.Polymorphic;
 import fr.traqueur.structura.api.Loadable;
 import fr.traqueur.structura.exceptions.StructuraException;
 import fr.traqueur.structura.factory.RecordInstanceFactory;
+import fr.traqueur.structura.registries.PolymorphicRegistry;
 
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
@@ -32,6 +34,8 @@ public class ValueConverter {
      */
     public Object convert(Object value, Type genericType, Class<?> rawType, String prefix) {
         if (value == null) return null;
+
+        rawType = this.getClassFromRegistry(rawType, value);
 
         // Vérification de compatibilité étendue pour les Maps et Collections
         if (rawType.isAssignableFrom(value.getClass()) &&
@@ -235,6 +239,46 @@ public class ValueConverter {
             case ParameterizedType paramType -> (Class<?>) paramType.getRawType();
             default -> throw new StructuraException("Unsupported type: " + type);
         };
+    }
+
+    private Class<?> getClassFromRegistry(Class<?> clazz, Object value) {
+        if(clazz == null) {
+            throw new StructuraException("Cannot convert null class type.");
+        }
+        if (value == null) {
+            throw new StructuraException("Cannot convert null value to polymorphic type " + clazz.getName() + ".");
+        }
+        if(!Loadable.class.isAssignableFrom(clazz)) {
+            return clazz;
+        }
+        //noinspection unchecked
+        Class<? extends Loadable> loadableClass = (Class<? extends Loadable>) clazz;
+
+        if(!clazz.isAnnotationPresent(Polymorphic.class)) {
+            return loadableClass;
+        }
+
+        if(!(value instanceof Map<?, ?>)) {
+            throw new StructuraException("Polymorphic type " + clazz.getName() + " requires a Map value for conversion.");
+        }
+        //noinspection unchecked
+        Map<String, Object> valueMap = (Map<String, Object>) value;
+
+        Polymorphic polymorphic = loadableClass.getAnnotation(Polymorphic.class);
+        String key = polymorphic.key();
+        PolymorphicRegistry<?> registry = PolymorphicRegistry.get(loadableClass);
+
+        if (!valueMap.containsKey(key)) {
+            throw new StructuraException("Polymorphic type " + clazz.getName() + " requires key '" + key + "' in value map.");
+        }
+
+        String typeName = valueMap.get(key).toString();
+        return registry.get(typeName).orElseThrow(() ->
+            new StructuraException(
+                    "No registered type found for " + typeName + " in polymorphic type " + loadableClass.getName() +
+                    ". Available types: " + String.join(", ", registry.availableNames())
+            )
+        );
     }
 
     /**
