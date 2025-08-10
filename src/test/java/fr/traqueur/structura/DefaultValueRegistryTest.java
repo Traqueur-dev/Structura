@@ -1,9 +1,7 @@
 package fr.traqueur.structura;
 
 import fr.traqueur.structura.annotations.defaults.*;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.lang.annotation.Annotation;
@@ -11,219 +9,146 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@DisplayName("DefaultValueRegistry Tests")
+/**
+ * Minimal tests for DefaultValueRegistry - Focus on registry behavior and custom handlers
+ * Built-in type handling is covered by integration tests
+ */
+@DisplayName("DefaultValueRegistry - Registry Behavior Tests")
 class DefaultValueRegistryTest {
 
-    private DefaultValueRegistry registry;
+    private final DefaultValueRegistry registry = DefaultValueRegistry.getInstance();
 
-    @BeforeEach
-    void setUp() {
-        registry = DefaultValueRegistry.getInstance();
+    @Test
+    @DisplayName("Should maintain singleton pattern")
+    void shouldMaintainSingletonPattern() {
+        DefaultValueRegistry instance1 = DefaultValueRegistry.getInstance();
+        DefaultValueRegistry instance2 = DefaultValueRegistry.getInstance();
+
+        assertSame(instance1, instance2);
     }
 
-    @Nested
-    @DisplayName("Built-in Default Value Tests")
-    class BuiltinDefaultValueTest {
-
-        @Test
-        @DisplayName("Should provide default string values")
-        void shouldProvideDefaultStringValues() {
-            DefaultString annotation = new DefaultString() {
-                @Override
-                public String value() { return "test"; }
-                @Override
-                public Class<? extends Annotation> annotationType() { return DefaultString.class; }
-            };
-
-            Object result = registry.getDefaultValue(String.class, List.of(annotation));
-            assertEquals("test", result);
-        }
-
-        @Test
-        @DisplayName("Should provide default int values")
-        void shouldProvideDefaultIntValues() {
-            DefaultInt annotation = new DefaultInt() {
-                @Override
-                public int value() { return 42; }
-                @Override
-                public Class<? extends Annotation> annotationType() { return DefaultInt.class; }
-            };
-
-            Object result = registry.getDefaultValue(int.class, List.of(annotation));
-            assertEquals(42, result);
-            
-            result = registry.getDefaultValue(Integer.class, List.of(annotation));
-            assertEquals(42, result);
-        }
-
-        @Test
-        @DisplayName("Should provide default long values")
-        void shouldProvideDefaultLongValues() {
-            DefaultLong annotation = new DefaultLong() {
-                @Override
-                public long value() { return 123456L; }
-                @Override
-                public Class<? extends Annotation> annotationType() { return DefaultLong.class; }
-            };
-
-            Object result = registry.getDefaultValue(long.class, List.of(annotation));
-            assertEquals(123456L, result);
-            
-            result = registry.getDefaultValue(Long.class, List.of(annotation));
-            assertEquals(123456L, result);
-        }
-
-        @Test
-        @DisplayName("Should provide default double values")
-        void shouldProvideDefaultDoubleValues() {
-            DefaultDouble annotation = new DefaultDouble() {
-                @Override
-                public double value() { return 3.14; }
-                @Override
-                public Class<? extends Annotation> annotationType() { return DefaultDouble.class; }
-            };
-
-            Object result = registry.getDefaultValue(double.class, List.of(annotation));
-            assertEquals(3.14, result);
-            
-            result = registry.getDefaultValue(Double.class, List.of(annotation));
-            assertEquals(3.14, result);
-        }
-
-        @Test
-        @DisplayName("Should provide default boolean values")
-        void shouldProvideDefaultBooleanValues() {
-            DefaultBool annotation = new DefaultBool() {
-                @Override
-                public boolean value() { return true; }
-                @Override
-                public Class<? extends Annotation> annotationType() { return DefaultBool.class; }
-            };
-
-            Object result = registry.getDefaultValue(boolean.class, List.of(annotation));
-            assertEquals(true, result);
-            
-            result = registry.getDefaultValue(Boolean.class, List.of(annotation));
-            assertEquals(true, result);
-        }
+    @interface CustomDefault {
+        String value();
     }
 
-    @Nested
-    @DisplayName("Custom Handler Tests")
-    class CustomHandlerTest {
 
-        public @interface CustomDefault {
-            String value();
-        }
+    @Test
+    @DisplayName("Should support custom handler registration and resolution")
+    void shouldSupportCustomHandlerRegistration() {
+        // Register custom handler
+        registry.register(String.class, CustomDefault.class, CustomDefault::value);
 
-        @Test
-        @DisplayName("Should allow registration of custom handlers")
-        void shouldAllowRegistrationOfCustomHandlers() {
-            registry.register(String.class, CustomDefault.class, CustomDefault::value);
+        // Create mock annotation
+        CustomDefault annotation = new CustomDefault() {
+            @Override
+            public String value() { return "custom_value"; }
+            @Override
+            public Class<? extends Annotation> annotationType() { return CustomDefault.class; }
+        };
 
-            CustomDefault annotation = new CustomDefault() {
-                @Override
-                public String value() { return "custom"; }
-                @Override
-                public Class<? extends Annotation> annotationType() { return CustomDefault.class; }
-            };
-
-            Object result = registry.getDefaultValue(String.class, List.of(annotation));
-            assertEquals("custom", result);
-        }
-
-        @Test
-        @DisplayName("Should handle multiple handlers for same type")
-        void shouldHandleMultipleHandlersForSameType() {
-            // First, test with DefaultString
-            DefaultString defaultStringAnnotation = new DefaultString() {
-                @Override
-                public String value() { return "default"; }
-                @Override
-                public Class<? extends Annotation> annotationType() { return DefaultString.class; }
-            };
-
-            Object result = registry.getDefaultValue(String.class, List.of(defaultStringAnnotation));
-            assertEquals("default", result);
-
-            // Register custom handler
-            registry.register(String.class, CustomDefault.class, CustomDefault::value);
-
-            CustomDefault customAnnotation = new CustomDefault() {
-                @Override
-                public String value() { return "custom"; }
-                @Override
-                public Class<? extends Annotation> annotationType() { return CustomDefault.class; }
-            };
-
-            result = registry.getDefaultValue(String.class, List.of(customAnnotation));
-            assertEquals("custom", result);
-        }
-
-        @Test
-        @DisplayName("Should return first non-null value from multiple annotations")
-        void shouldReturnFirstNonNullValueFromMultipleAnnotations() {
-            DefaultString stringAnnotation = new DefaultString() {
-                @Override
-                public String value() { return "string_default"; }
-                @Override
-                public Class<? extends Annotation> annotationType() { return DefaultString.class; }
-            };
-
-            registry.register(String.class, CustomDefault.class, CustomDefault::value);
-
-            CustomDefault customAnnotation = new CustomDefault() {
-                @Override
-                public String value() { return "custom_default"; }
-                @Override
-                public Class<? extends Annotation> annotationType() { return CustomDefault.class; }
-            };
-
-            Object result = registry.getDefaultValue(String.class, List.of(stringAnnotation, customAnnotation));
-            assertEquals("string_default", result); // First matching handler wins
-        }
+        // Test custom handler resolution
+        Object result = registry.getDefaultValue(String.class, List.of(annotation));
+        assertEquals("custom_value", result);
     }
 
-    @Nested
-    @DisplayName("Edge Cases Tests")
-    class EdgeCasesTest {
+    @interface CustomStringDefault {
+        String value();
+    }
 
-        @Test
-        @DisplayName("Should return null for unknown types")
-        void shouldReturnNullForUnknownTypes() {
-            Object result = registry.getDefaultValue(Object.class, List.of());
-            assertNull(result);
-        }
+    @Test
+    @DisplayName("Should handle multiple handlers for same type with priority")
+    void shouldHandleMultipleHandlersWithPriority() {
+        // Built-in DefaultString should work
+        DefaultString defaultStringAnnotation = new DefaultString() {
+            @Override
+            public String value() { return "default_string"; }
+            @Override
+            public Class<? extends Annotation> annotationType() { return DefaultString.class; }
+        };
 
-        @Test
-        @DisplayName("Should return null for empty annotation list")
-        void shouldReturnNullForEmptyAnnotationList() {
-            Object result = registry.getDefaultValue(String.class, List.of());
-            assertNull(result);
-        }
+        Object result = registry.getDefaultValue(String.class, List.of(defaultStringAnnotation));
+        assertEquals("default_string", result);
 
-        @Test
-        @DisplayName("Should return null when no matching handlers exist")
-        void shouldReturnNullWhenNoMatchingHandlersExist() {
-            DefaultInt intAnnotation = new DefaultInt() {
-                @Override
-                public int value() { return 42; }
-                @Override
-                public Class<? extends Annotation> annotationType() { return DefaultInt.class; }
-            };
+        registry.register(String.class, CustomStringDefault.class, CustomStringDefault::value);
 
-            // Try to get default for String with int annotation
-            Object result = registry.getDefaultValue(String.class, List.of(intAnnotation));
-            assertNull(result);
-        }
+        CustomStringDefault customAnnotation = new CustomStringDefault() {
+            @Override
+            public String value() { return "custom_string"; }
+            @Override
+            public Class<? extends Annotation> annotationType() { return CustomStringDefault.class; }
+        };
 
-        @Test
-        @DisplayName("Should be singleton")
-        void shouldBeSingleton() {
-            DefaultValueRegistry instance1 = DefaultValueRegistry.getInstance();
-            DefaultValueRegistry instance2 = DefaultValueRegistry.getInstance();
-            
-            assertSame(instance1, instance2);
-        }
+        result = registry.getDefaultValue(String.class, List.of(customAnnotation));
+        assertEquals("custom_string", result);
+    }
+
+    @interface SecondStringDefault {
+        String value();
+    }
+
+    @Test
+    @DisplayName("Should return first non-null value from multiple annotations")
+    void shouldReturnFirstNonNullFromMultipleAnnotations() {
+        DefaultString stringAnnotation = new DefaultString() {
+            @Override
+            public String value() { return "first_value"; }
+            @Override
+            public Class<? extends Annotation> annotationType() { return DefaultString.class; }
+        };
+
+        registry.register(String.class, SecondStringDefault.class, SecondStringDefault::value);
+
+        SecondStringDefault secondAnnotation = new SecondStringDefault() {
+            @Override
+            public String value() { return "second_value"; }
+            @Override
+            public Class<? extends Annotation> annotationType() { return SecondStringDefault.class; }
+        };
+
+        // First matching handler should win
+        Object result = registry.getDefaultValue(String.class, List.of(stringAnnotation, secondAnnotation));
+        assertEquals("first_value", result);
+    }
+
+    @Test
+    @DisplayName("Should return null for unhandled cases")
+    void shouldReturnNullForUnhandledCases() {
+        // Unknown type
+        assertNull(registry.getDefaultValue(Thread.class, List.of()));
+
+        // Empty annotation list
+        assertNull(registry.getDefaultValue(String.class, List.of()));
+
+        // Type with incompatible annotation
+        DefaultInt intAnnotation = new DefaultInt() {
+            @Override
+            public int value() { return 42; }
+            @Override
+            public Class<? extends Annotation> annotationType() { return DefaultInt.class; }
+        };
+
+        assertNull(registry.getDefaultValue(String.class, List.of(intAnnotation)));
+    }
+
+    @interface NullReturningDefault {
+        String value();
+    }
+
+    @Test
+    @DisplayName("Should handle null handlers gracefully")
+    void shouldHandleNullHandlersGracefully() {
+
+        // Register handler that returns null
+        registry.register(String.class, NullReturningDefault.class, annotation -> null);
+
+        NullReturningDefault annotation = new NullReturningDefault() {
+            @Override
+            public String value() { return "ignored"; }
+            @Override
+            public Class<? extends Annotation> annotationType() { return NullReturningDefault.class; }
+        };
+
+        Object result = registry.getDefaultValue(String.class, List.of(annotation));
+        assertNull(result);
     }
 }

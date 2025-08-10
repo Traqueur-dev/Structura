@@ -33,7 +33,9 @@ public class ValueConverter {
     public Object convert(Object value, Type genericType, Class<?> rawType, String prefix) {
         if (value == null) return null;
 
-        if (rawType.isAssignableFrom(value.getClass()) && !Collection.class.isAssignableFrom(rawType) && !Map.class.isAssignableFrom(rawType)) {
+        // Vérification de compatibilité étendue pour les Maps et Collections
+        if (rawType.isAssignableFrom(value.getClass()) &&
+                !needsSpecialConversion(rawType, genericType)) {
             return value;
         }
 
@@ -49,13 +51,27 @@ public class ValueConverter {
             return convertToMap(value, paramType, prefix);
         }
 
+        // Support des Maps brutes (sans génériques)
+        if (Map.class.isAssignableFrom(rawType) && value instanceof Map<?, ?>) {
+            return value; // Retourner tel quel si c'est déjà une Map
+        }
+
         if (isSettingsRecord(rawType) && value instanceof Map<?, ?>) {
             @SuppressWarnings("unchecked")
             Map<String, Object> valueMap = (Map<String, Object>) value;
             return recordFactory.createInstance(valueMap, rawType, prefix);
         }
 
-        return convertPrimitive(value, rawType);
+        return convertPrimitive(value, rawType, prefix);
+    }
+
+    /**
+     * Détermine si un type a besoin d'une conversion spéciale même s'il est assignable.
+     */
+    private boolean needsSpecialConversion(Class<?> rawType, Type genericType) {
+        // Les collections et maps avec génériques ont besoin d'une conversion spéciale
+        return (Collection.class.isAssignableFrom(rawType) || Map.class.isAssignableFrom(rawType))
+                && genericType instanceof ParameterizedType;
     }
 
     /**
@@ -125,7 +141,7 @@ public class ValueConverter {
     /**
      * Converts primitive types and enums.
      */
-    private Object convertPrimitive(Object value, Class<?> targetType) {
+    private Object convertPrimitive(Object value, Class<?> targetType, String prefix) {
         if (targetType == String.class) {
             return value.toString();
         }
@@ -170,7 +186,9 @@ public class ValueConverter {
             return str.charAt(0);
         }
 
-        return value;
+        // NOUVEAU: Lancer une exception pour les types non supportés
+        throw new StructuraException("Unsupported conversion from " + value.getClass().getName() +
+                " to " + targetType.getName() + " at " + prefix);
     }
 
     /**
