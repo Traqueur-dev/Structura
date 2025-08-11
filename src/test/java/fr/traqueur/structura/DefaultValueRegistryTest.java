@@ -1,6 +1,7 @@
 package fr.traqueur.structura;
 
-import fr.traqueur.structura.annotations.defaults.*;
+import fr.traqueur.structura.annotations.defaults.DefaultInt;
+import fr.traqueur.structura.annotations.defaults.DefaultString;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

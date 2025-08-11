@@ -1,10 +1,10 @@
 package fr.traqueur.structura.integration;
 
 import fr.traqueur.structura.StructuraProcessor;
-import fr.traqueur.structura.api.Structura;
-import fr.traqueur.structura.api.Loadable;
 import fr.traqueur.structura.annotations.defaults.DefaultInt;
 import fr.traqueur.structura.annotations.defaults.DefaultString;
+import fr.traqueur.structura.api.Loadable;
+import fr.traqueur.structura.api.Structura;
 import fr.traqueur.structura.exceptions.StructuraException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -15,8 +15,6 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
-import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 

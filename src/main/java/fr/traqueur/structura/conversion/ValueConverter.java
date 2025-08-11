@@ -1,8 +1,10 @@
 package fr.traqueur.structura.conversion;
 
+import fr.traqueur.structura.annotations.Polymorphic;
 import fr.traqueur.structura.api.Loadable;
 import fr.traqueur.structura.exceptions.StructuraException;
 import fr.traqueur.structura.factory.RecordInstanceFactory;
+import fr.traqueur.structura.registries.PolymorphicRegistry;
 
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
@@ -33,11 +35,12 @@ public class ValueConverter {
     public Object convert(Object value, Type genericType, Class<?> rawType, String prefix) {
         if (value == null) return null;
 
-        // Vérification de compatibilité étendue pour les Maps et Collections
         if (rawType.isAssignableFrom(value.getClass()) &&
                 !needsSpecialConversion(rawType, genericType)) {
             return value;
         }
+
+        rawType = this.getClassFromRegistry(rawType, value);
 
         if (rawType.isEnum()) {
             return convertToEnum(value, rawType);
@@ -51,9 +54,8 @@ public class ValueConverter {
             return convertToMap(value, paramType, prefix);
         }
 
-        // Support des Maps brutes (sans génériques)
         if (Map.class.isAssignableFrom(rawType) && value instanceof Map<?, ?>) {
-            return value; // Retourner tel quel si c'est déjà une Map
+            return value;
         }
 
         if (isSettingsRecord(rawType) && value instanceof Map<?, ?>) {
@@ -186,7 +188,6 @@ public class ValueConverter {
             return str.charAt(0);
         }
 
-        // NOUVEAU: Lancer une exception pour les types non supportés
         throw new StructuraException("Unsupported conversion from " + value.getClass().getName() +
                 " to " + targetType.getName() + " at " + prefix);
     }
@@ -235,6 +236,55 @@ public class ValueConverter {
             case ParameterizedType paramType -> (Class<?>) paramType.getRawType();
             default -> throw new StructuraException("Unsupported type: " + type);
         };
+    }
+
+    /**
+     * Retrieves the class from the polymorphic registry if applicable.
+     * If the class is not polymorphic, it returns the class itself.
+     * If the value is null, it throws an exception.
+     *
+     * @param clazz the class to check
+     * @param value the value to convert
+     * @return the class from the registry or the original class
+     */
+    private Class<?> getClassFromRegistry(Class<?> clazz, Object value) {
+        if(clazz == null) {
+            throw new StructuraException("Cannot convert null class type.");
+        }
+        if (value == null) {
+            throw new StructuraException("Cannot convert null value to polymorphic type " + clazz.getName() + ".");
+        }
+        if(!Loadable.class.isAssignableFrom(clazz)) {
+            return clazz;
+        }
+        //noinspection unchecked
+        Class<? extends Loadable> loadableClass = (Class<? extends Loadable>) clazz;
+
+        if(!clazz.isAnnotationPresent(Polymorphic.class)) {
+            return loadableClass;
+        }
+
+        if(!(value instanceof Map<?, ?>)) {
+            throw new StructuraException("Polymorphic type " + clazz.getName() + " requires a Map value for conversion.");
+        }
+        //noinspection unchecked
+        Map<String, Object> valueMap = (Map<String, Object>) value;
+
+        Polymorphic polymorphic = loadableClass.getAnnotation(Polymorphic.class);
+        String key = polymorphic.key();
+        PolymorphicRegistry<?> registry = PolymorphicRegistry.get(loadableClass);
+
+        if (!valueMap.containsKey(key)) {
+            throw new StructuraException("Polymorphic type " + clazz.getName() + " requires key '" + key + "' in value map.");
+        }
+
+        String typeName = valueMap.get(key).toString();
+        return registry.get(typeName).orElseThrow(() ->
+                new StructuraException(
+                        "No registered type found for " + typeName + " in polymorphic type " + loadableClass.getName() +
+                                ". Available types: " + String.join(", ", registry.availableNames())
+                )
+        );
     }
 
     /**

@@ -5,7 +5,8 @@ import fr.traqueur.structura.api.Loadable;
 import fr.traqueur.structura.exceptions.ValidationException;
 
 import java.lang.reflect.*;
-import java.util.*;
+import java.util.Collection;
+import java.util.Map;
 
 /**
  * Validator class for validating instances of records and enums.
