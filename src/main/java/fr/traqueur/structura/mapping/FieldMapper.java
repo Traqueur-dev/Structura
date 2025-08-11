@@ -1,11 +1,11 @@
 package fr.traqueur.structura.mapping;
 
 import fr.traqueur.structura.annotations.Options;
-import fr.traqueur.structura.DefaultValueRegistry;
 import fr.traqueur.structura.exceptions.StructuraException;
+import fr.traqueur.structura.registries.DefaultValueRegistry;
 
-import java.lang.reflect.Parameter;
 import java.lang.reflect.Field;
+import java.lang.reflect.Parameter;
 import java.lang.reflect.RecordComponent;
 import java.util.*;
 
