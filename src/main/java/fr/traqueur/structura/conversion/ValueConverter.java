@@ -20,6 +20,11 @@ public class ValueConverter {
 
     private final RecordInstanceFactory recordFactory;
 
+    /**
+     * Constructor for ValueConverter.
+     *
+     * @param recordFactory the factory to create record instances
+     */
     public ValueConverter(RecordInstanceFactory recordFactory) {
         this.recordFactory = recordFactory;
     }

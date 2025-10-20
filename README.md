@@ -291,6 +291,54 @@ MongoConfig mongo = (MongoConfig) config.backupDatabases().get(1);
 
 #### Advanced Polymorphic Features
 
+**Inline Discriminator Keys**
+
+By default, the discriminator key (e.g., `type`) is placed **inside** the polymorphic field:
+
+```yaml
+database:
+  type: mysql        # type is inside database
+  host: localhost
+```
+
+With `inline = true`, the discriminator key is placed **at the same level** as the field:
+
+```java
+@Polymorphic(key = "type", inline = true)  // Enable inline mode
+public interface DatabaseConfig extends Loadable {
+    String getHost();
+    int getPort();
+}
+
+public record AppConfig(
+    String appName,
+    DatabaseConfig database
+) implements Loadable {}
+```
+
+```yaml
+type: mysql          # type is at the same level as database
+database:
+  host: localhost
+  port: 3306
+```
+
+This makes the configuration clearer by avoiding repetition and improving readability. The inline key can also have a custom name:
+
+```java
+@Polymorphic(key = "provider", inline = true)
+public interface StorageConfig extends Loadable { /* ... */ }
+```
+
+```yaml
+provider: s3        # Custom key name at root level
+storage:
+  bucket: my-bucket
+  region: us-east-1
+```
+
+**Other Advanced Features**:
+
 - **Custom key names**: Use `@Polymorphic(key = "provider")` for different field names
 - **Auto-naming**: `registry.register(MySQLConfig.class)` uses lowercased class name
 - **Type safety**: Compile-time guarantees that implementations match the interface
@@ -771,7 +819,11 @@ Class<? super T> getRawType()
 
 #### `@Polymorphic`
 ```java
-@Polymorphic(key = "type")  // Default: "type"
+@Polymorphic(
+        key = "type",      // Default: "type" - discriminator field name
+        inline = false     // Default: false - discriminator inside field value
+                          // Set to true to place discriminator at parent level
+)
 ```
 
 #### `@Options`
