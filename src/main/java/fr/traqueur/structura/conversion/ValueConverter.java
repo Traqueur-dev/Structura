@@ -4,6 +4,7 @@ import fr.traqueur.structura.annotations.Polymorphic;
 import fr.traqueur.structura.api.Loadable;
 import fr.traqueur.structura.exceptions.StructuraException;
 import fr.traqueur.structura.factory.RecordInstanceFactory;
+import fr.traqueur.structura.registries.CustomReaderRegistry;
 import fr.traqueur.structura.registries.PolymorphicRegistry;
 
 import java.lang.reflect.ParameterizedType;
@@ -34,6 +35,12 @@ public class ValueConverter {
      */
     public Object convert(Object value, Type genericType, Class<?> rawType, String prefix) {
         if (value == null) return null;
+
+        // Try custom reader first
+        Optional<?> customResult = CustomReaderRegistry.getInstance().convert(value, rawType);
+        if (customResult.isPresent()) {
+            return customResult.get();
+        }
 
         if (rawType.isAssignableFrom(value.getClass()) &&
                 !needsSpecialConversion(rawType, genericType)) {
