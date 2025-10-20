@@ -7,10 +7,12 @@
 - 🎯 **Type-safe**: Compile-time safety with Java records
 - 🔧 **Annotation-driven**: Flexible configuration with `@Options` and default value annotations
 - 🔑 **Key-based mapping**: Flexible YAML structures with `@Options(isKey = true)` for both simple and complex object flattening
+- 📦 **Inline fields**: Flatten nested record fields with `@Options(inline = true)` for cleaner YAML structure
 - 🏗️ **Nested configurations**: Support for complex, hierarchical settings
 - 📋 **Collections support**: Lists, Sets, and Maps with generic type safety
 - 🔄 **Enum integration**: Special support for configuration enums
-- 🎭 **Polymorphic interfaces**: Automatic type resolution based on YAML keys for plugin systems
+- 🎭 **Polymorphic interfaces**: Automatic type resolution based on YAML keys for plugin systems (with inline discriminator support)
+- 📖 **Custom readers**: TypeToken-based custom type conversion for external libraries (Adventure API, etc.)
 - 🔀 **Automatic type conversion**: Smart conversion between compatible types
 - 🎨 **Kebab-case mapping**: Automatic camelCase ↔ kebab-case field name conversion
 - ⚡ **Zero dependencies**: Only optional SnakeYAML for YAML parsing
@@ -114,6 +116,92 @@ public record CustomConfig(
     @Options(name = "app-name") String applicationName,
     @Options(name = "db-config") DatabaseConfig databaseConfiguration
 ) implements Loadable {}
+```
+
+### Inline Fields (Field Flattening)
+
+Use `@Options(inline = true)` to flatten nested record fields to the parent level, avoiding unnecessary nesting:
+
+**Without inline (default behavior):**
+```java
+public record ServerInfo(
+    String host,
+    @DefaultInt(8080) int port
+) implements Loadable {}
+
+public record AppConfig(
+    String appName,
+    ServerInfo server  // NOT inline
+) implements Loadable {}
+```
+
+```yaml
+app-name: MyApp
+server:           # Nested under "server" key
+  host: localhost
+  port: 8080
+```
+
+**With inline:**
+```java
+public record AppConfig(
+    String appName,
+    @Options(inline = true) ServerInfo server  // Fields flattened to root
+) implements Loadable {}
+```
+
+```yaml
+app-name: MyApp
+host: localhost   # server.host is at root level
+port: 8080        # server.port is at root level
+```
+
+**Multiple inline fields:**
+```java
+public record ServerInfo(
+    String host,
+    @DefaultInt(8080) int port
+) implements Loadable {}
+
+public record DatabaseInfo(
+    String host,
+    @DefaultInt(5432) int port,
+    String database
+) implements Loadable {}
+
+public record AppConfig(
+    String appName,
+    @Options(inline = true) ServerInfo server,
+    @Options(inline = true) DatabaseInfo database
+) implements Loadable {}
+```
+
+```yaml
+app-name: MyApp
+host: api.example.com     # Shared by both server and database
+port: 9000                # Shared by both server and database
+database: production_db   # Specific to database
+```
+
+Both `server` and `database` will use the same `host` and `port` values from the flattened structure.
+
+**Mixing inline and nested fields:**
+```java
+public record AppConfig(
+    String appName,
+    @Options(inline = true) ServerInfo server,   // Inline
+    DatabaseInfo database                         // Nested
+) implements Loadable {}
+```
+
+```yaml
+app-name: MyApp
+host: api.example.com    # server.host (inline)
+port: 8443               # server.port (inline)
+database:                # database is nested
+  host: db.example.com
+  port: 5432
+  database: app_db
 ```
 
 ### Key-based Mapping
@@ -290,6 +378,54 @@ MongoConfig mongo = (MongoConfig) config.backupDatabases().get(1);
 
 #### Advanced Polymorphic Features
 
+**Inline Discriminator Keys**
+
+By default, the discriminator key (e.g., `type`) is placed **inside** the polymorphic field:
+
+```yaml
+database:
+  type: mysql        # type is inside database
+  host: localhost
+```
+
+With `inline = true`, the discriminator key is placed **at the same level** as the field:
+
+```java
+@Polymorphic(key = "type", inline = true)  // Enable inline mode
+public interface DatabaseConfig extends Loadable {
+    String getHost();
+    int getPort();
+}
+
+public record AppConfig(
+    String appName,
+    DatabaseConfig database
+) implements Loadable {}
+```
+
+```yaml
+type: mysql          # type is at the same level as database
+database:
+  host: localhost
+  port: 3306
+```
+
+This makes the configuration clearer by avoiding repetition and improving readability. The inline key can also have a custom name:
+
+```java
+@Polymorphic(key = "provider", inline = true)
+public interface StorageConfig extends Loadable { /* ... */ }
+```
+
+```yaml
+provider: s3        # Custom key name at root level
+storage:
+  bucket: my-bucket
+  region: us-east-1
+```
+
+**Other Advanced Features**:
+
 - **Custom key names**: Use `@Polymorphic(key = "provider")` for different field names
 - **Auto-naming**: `registry.register(MySQLConfig.class)` uses lowercased class name
 - **Type safety**: Compile-time guarantees that implementations match the interface
@@ -303,6 +439,182 @@ MongoConfig mongo = (MongoConfig) config.backupDatabases().get(1);
 - **Logging backends**: File, console, remote logging with different configurations
 - **Plugin systems**: Load different plugin implementations based on type
 - **Cloud providers**: AWS, Azure, GCP with provider-specific settings
+
+### Custom Readers 📖
+
+**NEW!** Structura supports custom type readers for external libraries and complex custom types. This is perfect for integrating with third-party libraries like Adventure API, or implementing custom deserialization logic.
+
+#### Basic Custom Readers
+
+For simple types, register a reader using the class:
+
+```java
+import fr.traqueur.structura.registries.CustomReaderRegistry;
+
+// Example with Adventure API Component
+CustomReaderRegistry.getInstance().register(
+    Component.class,
+    str -> MiniMessage.miniMessage().deserialize(str)
+);
+
+public record MessageConfig(
+    Component welcomeMessage,
+    Component errorMessage
+) implements Loadable {}
+```
+
+```yaml
+welcome-message: "<green>Welcome to the server!</green>"
+error-message: "<red>An error occurred!</red>"
+```
+
+```java
+MessageConfig config = Structura.parse(yaml, MessageConfig.class);
+// welcomeMessage and errorMessage are automatically converted to Components
+```
+
+#### Generic Types with TypeToken
+
+For generic types like `List<Component>`, `Optional<String>`, or `Map<String, Integer>`, use `TypeToken` to preserve full type information:
+
+```java
+import fr.traqueur.structura.types.TypeToken;
+
+// Register reader specifically for List<Component>
+CustomReaderRegistry.getInstance().register(
+    new TypeToken<List<Component>>() {},  // Note the {} - creates anonymous class
+    str -> parseComponentList(str)
+);
+
+// Register different reader for List<String>
+CustomReaderRegistry.getInstance().register(
+    new TypeToken<List<String>>() {},
+    str -> Arrays.asList(str.split(","))
+);
+```
+
+**Important**: Always instantiate `TypeToken` with `{}` to create an anonymous class that captures type information:
+
+```java
+// ✅ Correct - captures generic type
+new TypeToken<List<String>>() {}
+
+// ❌ Wrong - will throw StructuraException
+new TypeToken<List<String>>()
+```
+
+#### Common Use Cases
+
+**Comma-separated lists**:
+```java
+CustomReaderRegistry.getInstance().register(
+    new TypeToken<List<String>>() {},
+    str -> Arrays.stream(str.split(","))
+                 .map(String::trim)
+                 .toList()
+);
+```
+
+```yaml
+tags: "java, yaml, configuration"  # Becomes ["java", "yaml", "configuration"]
+```
+
+**Optional values**:
+```java
+CustomReaderRegistry.getInstance().register(
+    new TypeToken<Optional<String>>() {},
+    str -> str.isEmpty() ? Optional.empty() : Optional.of(str)
+);
+```
+
+**Complex parsing**:
+```java
+CustomReaderRegistry.getInstance().register(
+    new TypeToken<Map<String, Integer>>() {},
+    str -> Arrays.stream(str.split(","))
+                 .map(pair -> pair.split(":"))
+                 .collect(Collectors.toMap(
+                     parts -> parts[0].trim(),
+                     parts -> Integer.parseInt(parts[1].trim())
+                 ))
+);
+```
+
+```yaml
+scores: "alice:100, bob:95, charlie:87"  # Becomes {"alice": 100, "bob": 95, "charlie": 87}
+```
+
+#### Complete Example with Adventure API
+
+```java
+public class ServerSetup {
+    static {
+        // Register once at startup
+        CustomReaderRegistry.getInstance().register(
+            Component.class,
+            str -> MiniMessage.miniMessage().deserialize(str)
+        );
+    }
+}
+
+public record ServerConfig(
+    Component motd,
+    Component joinMessage,
+    List<Component> rules,
+    Map<String, Component> customMessages
+) implements Loadable {}
+```
+
+```yaml
+motd: "<gradient:green:blue>Welcome to My Server</gradient>"
+join-message: "<green>Welcome, {player}!</green>"
+rules:
+  - "<yellow>1. Be respectful</yellow>"
+  - "<yellow>2. No cheating</yellow>"
+  - "<yellow>3. Have fun!</yellow>"
+custom-messages:
+  afk: "<gray>{player} is now AFK</gray>"
+  back: "<green>{player} is back!</green>"
+```
+
+#### Priority and Fallback
+
+When both generic and non-generic readers are registered, Structura prioritizes the most specific one:
+
+```java
+// Fallback for all Box types
+registry.register(Box.class, str -> new Box<>("DEFAULT:" + str));
+
+// Specific for Box<String>
+registry.register(new TypeToken<Box<String>>() {}, str -> new Box<>("SPECIFIC:" + str));
+
+// When parsing Box<String>, uses the TypeToken reader
+// When parsing raw Box, uses the Class reader
+```
+
+#### Best Practices
+
+1. **Register once**: Register all readers at application startup
+2. **Thread-safe**: CustomReaderRegistry is thread-safe
+3. **Error handling**: Throw StructuraException for clear error messages:
+   ```java
+   registry.register(Component.class, str -> {
+       try {
+           return MiniMessage.miniMessage().deserialize(str);
+       } catch (Exception e) {
+           throw new StructuraException("Failed to parse: " + str, e);
+       }
+   });
+   ```
+
+4. **Type safety**: Always use specific types in TypeToken, not wildcards:
+   ```java
+   // ✅ Good
+   new TypeToken<List<String>>() {}
+
+   // ❌ Avoid
+   new TypeToken<List<?>>() {}
+   ```
 
 ### Optional Fields
 
@@ -548,11 +860,57 @@ Set<String> availableTypes = registry.availableNames();
 Optional<Class<? extends InterfaceClass>> impl = registry.get("key");
 ```
 
+### Custom Reader Registry API
+
+```java
+CustomReaderRegistry registry = CustomReaderRegistry.getInstance();
+
+// Register with Class (for non-generic types)
+<T> void register(Class<T> targetClass, Reader<T> reader)
+
+// Register with TypeToken (for generic types)
+<T> void register(TypeToken<T> typeToken, Reader<T> reader)
+
+// Check if reader exists
+boolean hasReader(Class<?> targetClass)
+boolean hasReader(TypeToken<?> typeToken)
+
+// Unregister
+boolean unregister(Class<?> targetClass)
+boolean unregister(TypeToken<?> typeToken)
+
+// Utility
+void clear()
+int size()
+```
+
+### TypeToken API
+
+```java
+// Create TypeToken for generic types (requires {})
+TypeToken<List<String>> token = new TypeToken<List<String>>() {};
+
+// Factory method from Class
+TypeToken<String> token = TypeToken.of(String.class);
+
+// Factory method from Type
+Type type = ... // from reflection
+TypeToken<?> token = TypeToken.of(type);
+
+// Get type information
+Type getType()
+Class<? super T> getRawType()
+```
+
 ### Annotations
 
 #### `@Polymorphic`
 ```java
-@Polymorphic(key = "type")  // Default: "type"
+@Polymorphic(
+        key = "type",      // Default: "type" - discriminator field name
+        inline = false     // Default: false - discriminator inside field value
+                          // Set to true to place discriminator at parent level
+)
 ```
 
 #### `@Options`
@@ -560,7 +918,8 @@ Optional<Class<? extends InterfaceClass>> impl = registry.get("key");
 @Options(
         name = "custom-field-name",    // Override field name
         optional = true,               // Mark as optional
-        isKey = true                   // Use for key-based mapping
+        isKey = true,                  // Use for key-based mapping
+        inline = false                 // Default: false - flatten record fields to parent level
 )
 ```
 

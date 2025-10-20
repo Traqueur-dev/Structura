@@ -20,6 +20,11 @@ public class ValueConverter {
 
     private final RecordInstanceFactory recordFactory;
 
+    /**
+     * Constructor for ValueConverter.
+     *
+     * @param recordFactory the factory to create record instances
+     */
     public ValueConverter(RecordInstanceFactory recordFactory) {
         this.recordFactory = recordFactory;
     }
@@ -36,8 +41,8 @@ public class ValueConverter {
     public Object convert(Object value, Type genericType, Class<?> rawType, String prefix) {
         if (value == null) return null;
 
-        // Try custom reader first
-        Optional<?> customResult = CustomReaderRegistry.getInstance().convert(value, rawType);
+        // Try custom reader first (with generic type information)
+        Optional<?> customResult = CustomReaderRegistry.getInstance().convert(value, genericType, rawType);
         if (customResult.isPresent()) {
             return customResult.get();
         }

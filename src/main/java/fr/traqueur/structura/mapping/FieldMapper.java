@@ -20,6 +20,12 @@ public class FieldMapper {
     private static final String KEBAB_CASE_REPLACEMENT = "$1-$2";
 
     /**
+     * Constructor for FieldMapper.
+     */
+    public FieldMapper() {
+    }
+
+    /**
      * Gets the effective field name based on parameter and annotations.
      *
      * @param parameter the constructor parameter

@@ -35,4 +35,26 @@ public @interface Options {
      * @return true if it is optional, false otherwise
      */
     boolean optional() default false;
+
+    /**
+     * Indicates whether the fields of this record should be inlined (flattened)
+     * at the parent level instead of being nested under this field's key.
+     *
+     * When inline = false (default):
+     * app-name: MyApp
+     * server:
+     *   host: localhost
+     *   port: 8080
+     *
+     * When inline = true:
+     * app-name: MyApp
+     * host: localhost    # server fields are flattened to parent level
+     * port: 8080
+     *
+     * Only works for record types implementing Loadable.
+     * Defaults to false.
+     *
+     * @return true if the fields should be inlined, false otherwise
+     */
+    boolean inline() default false;
 }

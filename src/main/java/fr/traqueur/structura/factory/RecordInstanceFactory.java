@@ -1,5 +1,8 @@
 package fr.traqueur.structura.factory;
 
+import fr.traqueur.structura.annotations.Options;
+import fr.traqueur.structura.annotations.Polymorphic;
+import fr.traqueur.structura.api.Loadable;
 import fr.traqueur.structura.conversion.ValueConverter;
 import fr.traqueur.structura.exceptions.StructuraException;
 import fr.traqueur.structura.mapping.FieldMapper;
@@ -21,6 +24,11 @@ public class RecordInstanceFactory {
     private final FieldMapper fieldMapper;
     private ValueConverter valueConverter;
 
+    /**
+     * Constructor for RecordInstanceFactory.
+     *
+     * @param fieldMapper the field mapper to use
+     */
     public RecordInstanceFactory(FieldMapper fieldMapper) {
         this.fieldMapper = fieldMapper;
     }
@@ -170,6 +178,11 @@ public class RecordInstanceFactory {
      */
     private Object resolveComponentValue(RecordComponent component, Parameter parameter,
                                          Map<String, Object> data, String prefix) {
+        // Check if this field should be inlined (flattened) at parent level
+        if (isInlineField(parameter, component.getType())) {
+            return createInstance(data, component.getType(), prefix);
+        }
+
         String fieldName = fieldMapper.getEffectiveFieldName(parameter, component.getName());
         String fullPath = fieldMapper.buildPath(prefix, fieldName);
 
@@ -179,9 +192,78 @@ public class RecordInstanceFactory {
             value = fieldMapper.getDefaultValue(parameter, fullPath);
         }
 
+        // Handle inline polymorphic keys
+        if (value != null && isPolymorphicWithInline(component.getType())) {
+            value = enrichWithInlineKey(value, data, component.getType(), fullPath);
+        }
+
         return value != null
                 ? valueConverter.convert(value, component.getGenericType(), component.getType(), prefix)
                 : null;
+    }
+
+    /**
+     * Checks if a field should be inlined (flattened) at the parent level.
+     *
+     * @param parameter the parameter to check
+     * @param type the type of the field
+     * @return true if the field should be inlined
+     */
+    private boolean isInlineField(Parameter parameter, Class<?> type) {
+        Options options = parameter.getAnnotation(Options.class);
+        if (options == null || !options.inline()) {
+            return false;
+        }
+        // Inline only works for records implementing Loadable
+        return type.isRecord() && Loadable.class.isAssignableFrom(type);
+    }
+
+    /**
+     * Checks if a type is a polymorphic interface with inline key.
+     *
+     * @param type the type to check
+     * @return true if the type is polymorphic with inline=true
+     */
+    private boolean isPolymorphicWithInline(Class<?> type) {
+        if (!type.isInterface() || !Loadable.class.isAssignableFrom(type)) {
+            return false;
+        }
+        Polymorphic polymorphic = type.getAnnotation(Polymorphic.class);
+        return polymorphic != null && polymorphic.inline();
+    }
+
+    /**
+     * Enriches a field value with the inline discriminator key from the parent data.
+     *
+     * @param value the field value (must be a Map)
+     * @param parentData the parent data containing the discriminator key
+     * @param type the polymorphic type
+     * @param fullPath the full path for error messages
+     * @return the enriched value with the discriminator key added
+     */
+    private Object enrichWithInlineKey(Object value, Map<String, Object> parentData, Class<?> type, String fullPath) {
+        if (!(value instanceof Map)) {
+            throw new StructuraException(
+                    "Inline polymorphic field at " + fullPath + " must have a Map value, but got " + value.getClass().getName()
+            );
+        }
+
+        Polymorphic polymorphic = type.getAnnotation(Polymorphic.class);
+        String discriminatorKey = polymorphic.key();
+
+        if (!parentData.containsKey(discriminatorKey)) {
+            throw new StructuraException(
+                    "Inline polymorphic field at " + fullPath + " requires discriminator key '" +
+                            discriminatorKey + "' at the same level as the field"
+            );
+        }
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> valueMap = (Map<String, Object>) value;
+        Map<String, Object> enrichedMap = new HashMap<>(valueMap);
+        enrichedMap.put(discriminatorKey, parentData.get(discriminatorKey));
+
+        return enrichedMap;
     }
 
     /**
