@@ -91,7 +91,7 @@ class CustomReaderRegistryTest {
             Reader<CustomType> reader = CustomType::new;
 
             StructuraException exception = assertThrows(StructuraException.class, () ->
-                    registry.register(null, reader)
+                    registry.register((Class<CustomType>) null, reader)
             );
 
             assertTrue(exception.getMessage().contains("Cannot register reader for null class"));
@@ -154,7 +154,7 @@ class CustomReaderRegistryTest {
         @DisplayName("Should throw exception when unregistering null class")
         void shouldThrowExceptionWhenUnregisteringNullClass() {
             StructuraException exception = assertThrows(StructuraException.class, () ->
-                    registry.unregister(null)
+                    registry.unregister((Class<?>) null)
             );
 
             assertTrue(exception.getMessage().contains("Cannot unregister reader for null class"));
@@ -302,7 +302,7 @@ class CustomReaderRegistryTest {
         @Test
         @DisplayName("Should return false when checking null class")
         void shouldReturnFalseWhenCheckingNullClass() {
-            assertFalse(registry.hasReader(null));
+            assertFalse(registry.hasReader((Class<?>) null));
         }
 
         @Test

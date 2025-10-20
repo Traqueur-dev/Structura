@@ -11,6 +11,7 @@
 - 📋 **Collections support**: Lists, Sets, and Maps with generic type safety
 - 🔄 **Enum integration**: Special support for configuration enums
 - 🎭 **Polymorphic interfaces**: Automatic type resolution based on YAML keys for plugin systems
+- 📖 **Custom readers**: TypeToken-based custom type conversion for external libraries (Adventure API, etc.)
 - 🔀 **Automatic type conversion**: Smart conversion between compatible types
 - 🎨 **Kebab-case mapping**: Automatic camelCase ↔ kebab-case field name conversion
 - ⚡ **Zero dependencies**: Only optional SnakeYAML for YAML parsing
@@ -304,6 +305,182 @@ MongoConfig mongo = (MongoConfig) config.backupDatabases().get(1);
 - **Plugin systems**: Load different plugin implementations based on type
 - **Cloud providers**: AWS, Azure, GCP with provider-specific settings
 
+### Custom Readers 📖
+
+**NEW!** Structura supports custom type readers for external libraries and complex custom types. This is perfect for integrating with third-party libraries like Adventure API, or implementing custom deserialization logic.
+
+#### Basic Custom Readers
+
+For simple types, register a reader using the class:
+
+```java
+import fr.traqueur.structura.registries.CustomReaderRegistry;
+
+// Example with Adventure API Component
+CustomReaderRegistry.getInstance().register(
+    Component.class,
+    str -> MiniMessage.miniMessage().deserialize(str)
+);
+
+public record MessageConfig(
+    Component welcomeMessage,
+    Component errorMessage
+) implements Loadable {}
+```
+
+```yaml
+welcome-message: "<green>Welcome to the server!</green>"
+error-message: "<red>An error occurred!</red>"
+```
+
+```java
+MessageConfig config = Structura.parse(yaml, MessageConfig.class);
+// welcomeMessage and errorMessage are automatically converted to Components
+```
+
+#### Generic Types with TypeToken
+
+For generic types like `List<Component>`, `Optional<String>`, or `Map<String, Integer>`, use `TypeToken` to preserve full type information:
+
+```java
+import fr.traqueur.structura.types.TypeToken;
+
+// Register reader specifically for List<Component>
+CustomReaderRegistry.getInstance().register(
+    new TypeToken<List<Component>>() {},  // Note the {} - creates anonymous class
+    str -> parseComponentList(str)
+);
+
+// Register different reader for List<String>
+CustomReaderRegistry.getInstance().register(
+    new TypeToken<List<String>>() {},
+    str -> Arrays.asList(str.split(","))
+);
+```
+
+**Important**: Always instantiate `TypeToken` with `{}` to create an anonymous class that captures type information:
+
+```java
+// ✅ Correct - captures generic type
+new TypeToken<List<String>>() {}
+
+// ❌ Wrong - will throw StructuraException
+new TypeToken<List<String>>()
+```
+
+#### Common Use Cases
+
+**Comma-separated lists**:
+```java
+CustomReaderRegistry.getInstance().register(
+    new TypeToken<List<String>>() {},
+    str -> Arrays.stream(str.split(","))
+                 .map(String::trim)
+                 .toList()
+);
+```
+
+```yaml
+tags: "java, yaml, configuration"  # Becomes ["java", "yaml", "configuration"]
+```
+
+**Optional values**:
+```java
+CustomReaderRegistry.getInstance().register(
+    new TypeToken<Optional<String>>() {},
+    str -> str.isEmpty() ? Optional.empty() : Optional.of(str)
+);
+```
+
+**Complex parsing**:
+```java
+CustomReaderRegistry.getInstance().register(
+    new TypeToken<Map<String, Integer>>() {},
+    str -> Arrays.stream(str.split(","))
+                 .map(pair -> pair.split(":"))
+                 .collect(Collectors.toMap(
+                     parts -> parts[0].trim(),
+                     parts -> Integer.parseInt(parts[1].trim())
+                 ))
+);
+```
+
+```yaml
+scores: "alice:100, bob:95, charlie:87"  # Becomes {"alice": 100, "bob": 95, "charlie": 87}
+```
+
+#### Complete Example with Adventure API
+
+```java
+public class ServerSetup {
+    static {
+        // Register once at startup
+        CustomReaderRegistry.getInstance().register(
+            Component.class,
+            str -> MiniMessage.miniMessage().deserialize(str)
+        );
+    }
+}
+
+public record ServerConfig(
+    Component motd,
+    Component joinMessage,
+    List<Component> rules,
+    Map<String, Component> customMessages
+) implements Loadable {}
+```
+
+```yaml
+motd: "<gradient:green:blue>Welcome to My Server</gradient>"
+join-message: "<green>Welcome, {player}!</green>"
+rules:
+  - "<yellow>1. Be respectful</yellow>"
+  - "<yellow>2. No cheating</yellow>"
+  - "<yellow>3. Have fun!</yellow>"
+custom-messages:
+  afk: "<gray>{player} is now AFK</gray>"
+  back: "<green>{player} is back!</green>"
+```
+
+#### Priority and Fallback
+
+When both generic and non-generic readers are registered, Structura prioritizes the most specific one:
+
+```java
+// Fallback for all Box types
+registry.register(Box.class, str -> new Box<>("DEFAULT:" + str));
+
+// Specific for Box<String>
+registry.register(new TypeToken<Box<String>>() {}, str -> new Box<>("SPECIFIC:" + str));
+
+// When parsing Box<String>, uses the TypeToken reader
+// When parsing raw Box, uses the Class reader
+```
+
+#### Best Practices
+
+1. **Register once**: Register all readers at application startup
+2. **Thread-safe**: CustomReaderRegistry is thread-safe
+3. **Error handling**: Throw StructuraException for clear error messages:
+   ```java
+   registry.register(Component.class, str -> {
+       try {
+           return MiniMessage.miniMessage().deserialize(str);
+       } catch (Exception e) {
+           throw new StructuraException("Failed to parse: " + str, e);
+       }
+   });
+   ```
+
+4. **Type safety**: Always use specific types in TypeToken, not wildcards:
+   ```java
+   // ✅ Good
+   new TypeToken<List<String>>() {}
+
+   // ❌ Avoid
+   new TypeToken<List<?>>() {}
+   ```
+
 ### Optional Fields
 
 Mark fields as optional to avoid exceptions when missing:
@@ -546,6 +723,48 @@ PolymorphicRegistry<InterfaceClass> registry = PolymorphicRegistry.get(Interface
 // Check available implementations
 Set<String> availableTypes = registry.availableNames();
 Optional<Class<? extends InterfaceClass>> impl = registry.get("key");
+```
+
+### Custom Reader Registry API
+
+```java
+CustomReaderRegistry registry = CustomReaderRegistry.getInstance();
+
+// Register with Class (for non-generic types)
+<T> void register(Class<T> targetClass, Reader<T> reader)
+
+// Register with TypeToken (for generic types)
+<T> void register(TypeToken<T> typeToken, Reader<T> reader)
+
+// Check if reader exists
+boolean hasReader(Class<?> targetClass)
+boolean hasReader(TypeToken<?> typeToken)
+
+// Unregister
+boolean unregister(Class<?> targetClass)
+boolean unregister(TypeToken<?> typeToken)
+
+// Utility
+void clear()
+int size()
+```
+
+### TypeToken API
+
+```java
+// Create TypeToken for generic types (requires {})
+TypeToken<List<String>> token = new TypeToken<List<String>>() {};
+
+// Factory method from Class
+TypeToken<String> token = TypeToken.of(String.class);
+
+// Factory method from Type
+Type type = ... // from reflection
+TypeToken<?> token = TypeToken.of(type);
+
+// Get type information
+Type getType()
+Class<? super T> getRawType()
 ```
 
 ### Annotations
