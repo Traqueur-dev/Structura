@@ -180,7 +180,21 @@ public class RecordInstanceFactory {
                                          Map<String, Object> data, String prefix) {
         // Check if this field should be inlined (flattened) at parent level
         if (isInlineField(parameter, component.getType())) {
-            return createInstance(data, component.getType(), prefix);
+            // For concrete records, create instance directly with parent data
+            if (component.getType().isRecord()) {
+                return createInstance(data, component.getType(), prefix);
+            }
+
+            // For polymorphic interfaces, enrich parent data with discriminator and convert
+            if (component.getType().isInterface() && isPolymorphicWithInline(component.getType())) {
+                String fieldName = fieldMapper.getEffectiveFieldName(parameter, component.getName());
+                String fullPath = fieldMapper.buildPath(prefix, fieldName);
+
+                // Enrich parent data with discriminator key for polymorphic resolution
+                Map<String, Object> enrichedData = enrichParentDataWithDiscriminator(data, component.getType(), fullPath);
+
+                return valueConverter.convert(enrichedData, component.getGenericType(), component.getType(), prefix);
+            }
         }
 
         String fieldName = fieldMapper.getEffectiveFieldName(parameter, component.getName());
@@ -214,8 +228,19 @@ public class RecordInstanceFactory {
         if (options == null || !options.inline()) {
             return false;
         }
-        // Inline only works for records implementing Loadable
-        return type.isRecord() && Loadable.class.isAssignableFrom(type);
+
+        // Inline works for records implementing Loadable
+        if (type.isRecord() && Loadable.class.isAssignableFrom(type)) {
+            return true;
+        }
+
+        // Inline also works for polymorphic interfaces with @Polymorphic(inline = true)
+        if (type.isInterface() && Loadable.class.isAssignableFrom(type)) {
+            Polymorphic polymorphic = type.getAnnotation(Polymorphic.class);
+            return polymorphic != null && polymorphic.inline();
+        }
+
+        return false;
     }
 
     /**
@@ -264,6 +289,33 @@ public class RecordInstanceFactory {
         enrichedMap.put(discriminatorKey, parentData.get(discriminatorKey));
 
         return enrichedMap;
+    }
+
+    /**
+     * Enriches parent data with discriminator key for fully inline polymorphic fields.
+     * When both @Options(inline = true) and @Polymorphic(inline = true) are used,
+     * all fields including the discriminator are at the parent level.
+     *
+     * @param parentData the parent data containing all fields
+     * @param type the polymorphic interface type
+     * @param fullPath the full path for error messages
+     * @return a copy of parent data (already contains discriminator)
+     */
+    private Map<String, Object> enrichParentDataWithDiscriminator(Map<String, Object> parentData,
+                                                                   Class<?> type, String fullPath) {
+        Polymorphic polymorphic = type.getAnnotation(Polymorphic.class);
+        String discriminatorKey = polymorphic.key();
+
+        if (!parentData.containsKey(discriminatorKey)) {
+            throw new StructuraException(
+                    "Fully inline polymorphic field at " + fullPath + " requires discriminator key '" +
+                            discriminatorKey + "' at the parent level"
+            );
+        }
+
+        // Parent data already contains all fields including the discriminator
+        // Just return a copy to avoid mutations
+        return new HashMap<>(parentData);
     }
 
     /**
