@@ -1,5 +1,6 @@
 package fr.traqueur.structura;
 
+import fr.traqueur.structura.annotations.Options;
 import fr.traqueur.structura.annotations.Polymorphic;
 import fr.traqueur.structura.annotations.defaults.DefaultInt;
 import fr.traqueur.structura.annotations.defaults.DefaultString;
@@ -496,6 +497,206 @@ class InlinePolymorphicTest {
             assertEquals("CacheApp", result.appName());
             assertInstanceOf(RedisConfig.class, result.cache());
             assertEquals("redis.example.com", ((RedisConfig) result.cache()).host());
+        }
+    }
+
+    // ===== Fully Inline Polymorphic Records =====
+
+    public record FullyInlineConfig(
+            String appName,
+            @Options(inline = true) DatabaseConfig database
+    ) implements Loadable {}
+
+    public record FullyInlineWithStorage(
+            String appName,
+            @Options(inline = true) StorageConfig storage
+    ) implements Loadable {}
+
+    public record MultipleFullyInline(
+            String appName,
+            @Options(inline = true) DatabaseConfig database,
+            CacheConfig cache  // Not fully inline
+    ) implements Loadable {}
+
+    @Nested
+    @DisplayName("Fully Inline Polymorphic - @Options(inline=true) + @Polymorphic(inline=true)")
+    class FullyInlinePolymorphicTest {
+
+        @Test
+        @DisplayName("Should fully flatten polymorphic fields when both inline flags are true")
+        void shouldFullyFlattenPolymorphicFields() {
+            Map<String, Object> data = Map.of(
+                    "app-name", "FullyInlineApp",
+                    "type", "mysql",           // Discriminator at parent level
+                    "host", "db.example.com",  // Field from MySQLConfig
+                    "port", 3307,              // Field from MySQLConfig
+                    "driver", "mysql-driver"   // Field from MySQLConfig
+            );
+
+            FullyInlineConfig result = (FullyInlineConfig) recordFactory.createInstance(
+                    data, FullyInlineConfig.class, ""
+            );
+
+            assertEquals("FullyInlineApp", result.appName());
+            assertInstanceOf(MySQLConfig.class, result.database());
+
+            MySQLConfig mysql = (MySQLConfig) result.database();
+            assertEquals("db.example.com", mysql.host());
+            assertEquals(3307, mysql.port());
+            assertEquals("mysql-driver", mysql.driver());
+        }
+
+        @Test
+        @DisplayName("Should resolve different polymorphic types when fully inline")
+        void shouldResolveDifferentTypesFullyInline() {
+            // Test MySQL
+            Map<String, Object> mysqlData = Map.of(
+                    "app-name", "MySQLApp",
+                    "type", "mysql",
+                    "host", "mysql.example.com"
+                    // port and driver should use defaults
+            );
+
+            FullyInlineConfig mysqlResult = (FullyInlineConfig) recordFactory.createInstance(
+                    mysqlData, FullyInlineConfig.class, ""
+            );
+
+            assertInstanceOf(MySQLConfig.class, mysqlResult.database());
+            MySQLConfig mysql = (MySQLConfig) mysqlResult.database();
+            assertEquals("mysql.example.com", mysql.host());
+            assertEquals(3306, mysql.port());  // Default
+            assertEquals("mysql", mysql.driver());  // Default
+
+            // Test PostgreSQL
+            Map<String, Object> postgresData = Map.of(
+                    "app-name", "PostgresApp",
+                    "type", "postgres",
+                    "host", "postgres.example.com",
+                    "port", 5433,
+                    "driver", "postgresql-driver"
+            );
+
+            FullyInlineConfig postgresResult = (FullyInlineConfig) recordFactory.createInstance(
+                    postgresData, FullyInlineConfig.class, ""
+            );
+
+            assertInstanceOf(PostgreSQLConfig.class, postgresResult.database());
+            PostgreSQLConfig postgres = (PostgreSQLConfig) postgresResult.database();
+            assertEquals("postgres.example.com", postgres.host());
+            assertEquals(5433, postgres.port());
+            assertEquals("postgresql-driver", postgres.driver());
+        }
+
+        @Test
+        @DisplayName("Should work with custom discriminator key when fully inline")
+        void shouldWorkWithCustomKeyFullyInline() {
+            Map<String, Object> data = Map.of(
+                    "app-name", "StorageApp",
+                    "provider", "s3",           // Custom discriminator key
+                    "bucket", "my-bucket",      // S3Config field
+                    "region", "us-west-2"       // S3Config field
+            );
+
+            FullyInlineWithStorage result = (FullyInlineWithStorage) recordFactory.createInstance(
+                    data, FullyInlineWithStorage.class, ""
+            );
+
+            assertEquals("StorageApp", result.appName());
+            assertInstanceOf(S3Config.class, result.storage());
+
+            S3Config s3 = (S3Config) result.storage();
+            assertEquals("my-bucket", s3.bucket());
+            assertEquals("us-west-2", s3.region());
+        }
+
+        @Test
+        @DisplayName("Should use default values when fully inline")
+        void shouldUseDefaultValuesFullyInline() {
+            Map<String, Object> data = Map.of(
+                    "app-name", "MinimalApp",
+                    "type", "mysql"
+                    // All MySQL fields missing, should use defaults
+            );
+
+            FullyInlineConfig result = (FullyInlineConfig) recordFactory.createInstance(
+                    data, FullyInlineConfig.class, ""
+            );
+
+            assertInstanceOf(MySQLConfig.class, result.database());
+            MySQLConfig mysql = (MySQLConfig) result.database();
+            assertEquals("localhost", mysql.host());
+            assertEquals(3306, mysql.port());
+            assertEquals("mysql", mysql.driver());
+        }
+
+        @Test
+        @DisplayName("Should handle mixed fully inline and non-inline polymorphic fields")
+        void shouldHandleMixedFullyInlineAndNonInline() {
+            Map<String, Object> data = Map.of(
+                    "app-name", "MixedApp",
+                    "type", "postgres",         // For fully inline database
+                    "host", "db.example.com",   // For fully inline database
+                    "port", 5433,               // For fully inline database
+                    "driver", "pg-driver",      // For fully inline database
+                    "cache", Map.of(            // Non-inline (classic behavior)
+                            "type", "redis",
+                            "host", "cache.example.com",
+                            "port", 6380
+                    )
+            );
+
+            MultipleFullyInline result = (MultipleFullyInline) recordFactory.createInstance(
+                    data, MultipleFullyInline.class, ""
+            );
+
+            assertEquals("MixedApp", result.appName());
+
+            // Fully inline database
+            assertInstanceOf(PostgreSQLConfig.class, result.database());
+            PostgreSQLConfig postgres = (PostgreSQLConfig) result.database();
+            assertEquals("db.example.com", postgres.host());
+            assertEquals(5433, postgres.port());
+            assertEquals("pg-driver", postgres.driver());
+
+            // Non-inline cache
+            assertInstanceOf(RedisConfig.class, result.cache());
+            RedisConfig redis = (RedisConfig) result.cache();
+            assertEquals("cache.example.com", redis.host());
+            assertEquals(6380, redis.port());
+        }
+
+        @Test
+        @DisplayName("Should throw exception when discriminator key is missing for fully inline")
+        void shouldThrowWhenDiscriminatorMissingFullyInline() {
+            Map<String, Object> data = Map.of(
+                    "app-name", "App",
+                    // Missing "type" key
+                    "host", "db.example.com",
+                    "port", 3306
+            );
+
+            StructuraException exception = assertThrows(StructuraException.class, () ->
+                    recordFactory.createInstance(data, FullyInlineConfig.class, "")
+            );
+
+            assertTrue(exception.getMessage().contains("requires discriminator key 'type'"));
+            assertTrue(exception.getMessage().contains("at the parent level"));
+        }
+
+        @Test
+        @DisplayName("Should throw exception for unknown type when fully inline")
+        void shouldThrowForUnknownTypeFullyInline() {
+            Map<String, Object> data = Map.of(
+                    "app-name", "App",
+                    "type", "oracle",  // Unknown type
+                    "host", "db.example.com"
+            );
+
+            StructuraException exception = assertThrows(StructuraException.class, () ->
+                    recordFactory.createInstance(data, FullyInlineConfig.class, "")
+            );
+
+            assertTrue(exception.getMessage().contains("No registered type found for oracle"));
         }
     }
 }
