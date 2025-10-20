@@ -7,10 +7,11 @@
 - 🎯 **Type-safe**: Compile-time safety with Java records
 - 🔧 **Annotation-driven**: Flexible configuration with `@Options` and default value annotations
 - 🔑 **Key-based mapping**: Flexible YAML structures with `@Options(isKey = true)` for both simple and complex object flattening
+- 📦 **Inline fields**: Flatten nested record fields with `@Options(inline = true)` for cleaner YAML structure
 - 🏗️ **Nested configurations**: Support for complex, hierarchical settings
 - 📋 **Collections support**: Lists, Sets, and Maps with generic type safety
 - 🔄 **Enum integration**: Special support for configuration enums
-- 🎭 **Polymorphic interfaces**: Automatic type resolution based on YAML keys for plugin systems
+- 🎭 **Polymorphic interfaces**: Automatic type resolution based on YAML keys for plugin systems (with inline discriminator support)
 - 📖 **Custom readers**: TypeToken-based custom type conversion for external libraries (Adventure API, etc.)
 - 🔀 **Automatic type conversion**: Smart conversion between compatible types
 - 🎨 **Kebab-case mapping**: Automatic camelCase ↔ kebab-case field name conversion
@@ -115,6 +116,92 @@ public record CustomConfig(
     @Options(name = "app-name") String applicationName,
     @Options(name = "db-config") DatabaseConfig databaseConfiguration
 ) implements Loadable {}
+```
+
+### Inline Fields (Field Flattening)
+
+Use `@Options(inline = true)` to flatten nested record fields to the parent level, avoiding unnecessary nesting:
+
+**Without inline (default behavior):**
+```java
+public record ServerInfo(
+    String host,
+    @DefaultInt(8080) int port
+) implements Loadable {}
+
+public record AppConfig(
+    String appName,
+    ServerInfo server  // NOT inline
+) implements Loadable {}
+```
+
+```yaml
+app-name: MyApp
+server:           # Nested under "server" key
+  host: localhost
+  port: 8080
+```
+
+**With inline:**
+```java
+public record AppConfig(
+    String appName,
+    @Options(inline = true) ServerInfo server  // Fields flattened to root
+) implements Loadable {}
+```
+
+```yaml
+app-name: MyApp
+host: localhost   # server.host is at root level
+port: 8080        # server.port is at root level
+```
+
+**Multiple inline fields:**
+```java
+public record ServerInfo(
+    String host,
+    @DefaultInt(8080) int port
+) implements Loadable {}
+
+public record DatabaseInfo(
+    String host,
+    @DefaultInt(5432) int port,
+    String database
+) implements Loadable {}
+
+public record AppConfig(
+    String appName,
+    @Options(inline = true) ServerInfo server,
+    @Options(inline = true) DatabaseInfo database
+) implements Loadable {}
+```
+
+```yaml
+app-name: MyApp
+host: api.example.com     # Shared by both server and database
+port: 9000                # Shared by both server and database
+database: production_db   # Specific to database
+```
+
+Both `server` and `database` will use the same `host` and `port` values from the flattened structure.
+
+**Mixing inline and nested fields:**
+```java
+public record AppConfig(
+    String appName,
+    @Options(inline = true) ServerInfo server,   // Inline
+    DatabaseInfo database                         // Nested
+) implements Loadable {}
+```
+
+```yaml
+app-name: MyApp
+host: api.example.com    # server.host (inline)
+port: 8443               # server.port (inline)
+database:                # database is nested
+  host: db.example.com
+  port: 5432
+  database: app_db
 ```
 
 ### Key-based Mapping
@@ -831,7 +918,8 @@ Class<? super T> getRawType()
 @Options(
         name = "custom-field-name",    // Override field name
         optional = true,               // Mark as optional
-        isKey = true                   // Use for key-based mapping
+        isKey = true,                  // Use for key-based mapping
+        inline = false                 // Default: false - flatten record fields to parent level
 )
 ```
 

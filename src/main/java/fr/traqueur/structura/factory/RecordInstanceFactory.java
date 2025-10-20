@@ -1,5 +1,6 @@
 package fr.traqueur.structura.factory;
 
+import fr.traqueur.structura.annotations.Options;
 import fr.traqueur.structura.annotations.Polymorphic;
 import fr.traqueur.structura.api.Loadable;
 import fr.traqueur.structura.conversion.ValueConverter;
@@ -177,6 +178,11 @@ public class RecordInstanceFactory {
      */
     private Object resolveComponentValue(RecordComponent component, Parameter parameter,
                                          Map<String, Object> data, String prefix) {
+        // Check if this field should be inlined (flattened) at parent level
+        if (isInlineField(parameter, component.getType())) {
+            return createInstance(data, component.getType(), prefix);
+        }
+
         String fieldName = fieldMapper.getEffectiveFieldName(parameter, component.getName());
         String fullPath = fieldMapper.buildPath(prefix, fieldName);
 
@@ -194,6 +200,22 @@ public class RecordInstanceFactory {
         return value != null
                 ? valueConverter.convert(value, component.getGenericType(), component.getType(), prefix)
                 : null;
+    }
+
+    /**
+     * Checks if a field should be inlined (flattened) at the parent level.
+     *
+     * @param parameter the parameter to check
+     * @param type the type of the field
+     * @return true if the field should be inlined
+     */
+    private boolean isInlineField(Parameter parameter, Class<?> type) {
+        Options options = parameter.getAnnotation(Options.class);
+        if (options == null || !options.inline()) {
+            return false;
+        }
+        // Inline only works for records implementing Loadable
+        return type.isRecord() && Loadable.class.isAssignableFrom(type);
     }
 
     /**
