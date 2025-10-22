@@ -36,4 +36,39 @@ public @interface Polymorphic {
      */
     boolean inline() default false;
 
+    /**
+     * Determines whether the YAML key should be used as the discriminator value.
+     * This enables a different syntax where the map key identifies the type.
+     *
+     * When useKeyAsDiscriminator = false (default):
+     * metadata:
+     *   - type: food
+     *     nutrition: 8
+     *   - type: potion
+     *     color: "#FF0000"
+     *
+     * When useKeyAsDiscriminator = true:
+     * For simple fields (ItemMetadata trim):
+     * trim:              # "trim" is the discriminator value
+     *   material: DIAMOND
+     *   pattern: VEX
+     *
+     * For collections (List&lt;ItemMetadata&gt; metadata):
+     * metadata:
+     *   food:            # "food" is the discriminator value
+     *     nutrition: 8
+     *   potion:          # "potion" is the discriminator value
+     *     color: "#FF0000"
+     *
+     * For maps (Map&lt;String, ItemMetadata&gt; metadata):
+     * metadata:
+     *   food:            # "food" is both the map key and discriminator value
+     *     nutrition: 8
+     *   potion:          # "potion" is both the map key and discriminator value
+     *     color: "#FF0000"
+     *
+     * @return true if YAML keys should be used as discriminator values, false otherwise
+     */
+    boolean useKey() default false;
+
 }

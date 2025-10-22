@@ -211,6 +211,11 @@ public class RecordInstanceFactory {
             value = enrichWithInlineKey(value, data, component.getType(), fullPath);
         }
 
+        // Handle useKeyAsDiscriminator for simple polymorphic fields
+        if (value != null && isPolymorphicWithKeyAsDiscriminator(component.getType())) {
+            value = enrichWithFieldNameAsDiscriminator(value, fieldName, component.getType(), fullPath);
+        }
+
         return value != null
                 ? valueConverter.convert(value, component.getGenericType(), component.getType(), prefix)
                 : null;
@@ -248,13 +253,18 @@ public class RecordInstanceFactory {
      *
      * @param type the type to check
      * @return true if the type is polymorphic with inline=true
+     * @throws StructuraException if both inline and useKey are true
      */
     private boolean isPolymorphicWithInline(Class<?> type) {
         if (!type.isInterface() || !Loadable.class.isAssignableFrom(type)) {
             return false;
         }
         Polymorphic polymorphic = type.getAnnotation(Polymorphic.class);
-        return polymorphic != null && polymorphic.inline();
+        if (polymorphic == null) {
+            return false;
+        }
+
+        return polymorphic.inline();
     }
 
     /**
@@ -359,5 +369,63 @@ public class RecordInstanceFactory {
         if (valueConverter == null) {
             throw new StructuraException("ValueConverter not injected - call setValueConverter() first");
         }
+    }
+
+    /**
+     * Checks if a type is polymorphic with useKeyAsDiscriminator enabled.
+     *
+     * @param type the type to check
+     * @return true if the type has @Polymorphic(useKey = true)
+     * @throws StructuraException if both inline and useKey are true
+     */
+    private boolean isPolymorphicWithKeyAsDiscriminator(Class<?> type) {
+        if (!type.isInterface() || !Loadable.class.isAssignableFrom(type)) {
+            return false;
+        }
+        Polymorphic polymorphic = type.getAnnotation(Polymorphic.class);
+        if (polymorphic == null) {
+            return false;
+        }
+
+        return polymorphic.useKey();
+    }
+
+    /**
+     * Enriches a field value with the field name as discriminator for polymorphic resolution.
+     * This is used when @Polymorphic(useKeyAsDiscriminator = true) is set on the field's type.
+     *
+     * @param value the field value (must be a Map)
+     * @param fieldName the YAML field name to use as discriminator value
+     * @param type the polymorphic type
+     * @param fullPath the full path for error messages
+     * @return a Map with the discriminator key added
+     */
+    private Map<String, Object> enrichWithFieldNameAsDiscriminator(Object value, String fieldName,
+                                                                    Class<?> type, String fullPath) {
+        if (!(value instanceof Map<?, ?>)) {
+            throw new StructuraException(
+                "Polymorphic field with useKeyAsDiscriminator at " + fullPath +
+                " must have a Map value, but got " + value.getClass().getName()
+            );
+        }
+
+        Polymorphic polymorphic = type.getAnnotation(Polymorphic.class);
+        String discriminatorKey = polymorphic.key();
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> valueMap = (Map<String, Object>) value;
+        Map<String, Object> enrichedMap = new HashMap<>(valueMap);
+        enrichedMap.put(discriminatorKey, fieldName);
+
+        return enrichedMap;
+    }
+
+    /**
+     * Gets the FieldMapper used by this factory.
+     *
+     * @return the FieldMapper
+     */
+    public FieldMapper getFieldMapper() {
+        return fieldMapper;
     }
 }
