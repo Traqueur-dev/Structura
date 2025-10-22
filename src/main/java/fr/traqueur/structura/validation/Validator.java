@@ -1,7 +1,9 @@
 package fr.traqueur.structura.validation;
 
+import fr.traqueur.structura.annotations.Polymorphic;
 import fr.traqueur.structura.annotations.validation.*;
 import fr.traqueur.structura.api.Loadable;
+import fr.traqueur.structura.exceptions.StructuraException;
 import fr.traqueur.structura.exceptions.ValidationException;
 
 import java.lang.reflect.*;
@@ -63,7 +65,7 @@ public class Validator {
                 Object value = accessor.invoke(record);
                 String fieldPath = path.isEmpty() ? component.getName() : path + "." + component.getName();
 
-                validateField(value, component, fieldPath);
+                validateField(component.getType(), value, component, fieldPath);
 
                 if (value != null && isSettingsType(component.getType())) {
                     validate(value, fieldPath);
@@ -95,7 +97,7 @@ public class Validator {
                 Object value = field.get(enumInstance);
                 String fieldPath = path.isEmpty() ? field.getName() : path + "." + field.getName();
 
-                validateField(value, field, fieldPath);
+                validateField(enumClass, value, field, fieldPath);
             } catch (IllegalAccessException e) {
                 throw new ValidationException("Failed to validate enum field: " + field.getName(), e);
             }
@@ -109,7 +111,7 @@ public class Validator {
      * @param element The annotated element (RecordComponent or Field)
      * @param path The path for error messages
      */
-    private void validateField(Object value, AnnotatedElement element, String path) {
+    private void validateField(Class<?> clazz, Object value, AnnotatedElement element, String path) {
         if (value == null) {
             return;
         }
@@ -119,6 +121,17 @@ public class Validator {
         validatePattern(value, element, path);
         validateNotEmpty(value, element, path);
         validateSize(value, element, path);
+        validatePolymorphic(clazz, path);
+    }
+
+    private void validatePolymorphic(Class<?> value, String path) {
+        if (!value.isAnnotationPresent(Polymorphic.class)) return;
+
+        Polymorphic polymorphic = value.getAnnotation(Polymorphic.class);
+        if (polymorphic.inline() && polymorphic.useKey()) {
+            throw new ValidationException(formatMessage("Invalid @Polymorphic configuration: 'inline' and 'useKey' cannot both be true in {path}",
+                    Map.of("path", path)));
+        }
     }
 
     /**

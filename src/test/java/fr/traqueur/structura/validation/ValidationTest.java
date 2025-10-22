@@ -1,5 +1,6 @@
 package fr.traqueur.structura.validation;
 
+import fr.traqueur.structura.annotations.Polymorphic;
 import fr.traqueur.structura.annotations.validation.*;
 import fr.traqueur.structura.api.Loadable;
 import fr.traqueur.structura.exceptions.ValidationException;
@@ -43,6 +44,30 @@ class ValidationTest {
         @Min(10) public int minValue;
         @Max(100) public int maxValue;
         @NotEmpty public String name;
+    }
+
+    @Polymorphic(useKey = true, inline = true)
+    public interface ItemMetadata extends Loadable {}
+
+    // Implementations
+    public record FoodMetadata(int nutrition, double saturation) implements ItemMetadata {}
+
+    public record SimpleFieldConfig(ItemMetadata trim) implements Loadable {}
+
+    @Nested
+    @DisplayName("Polymorphic Validation Tests")
+    class PolymorphicValidationTest {
+        @Test
+        @DisplayName("Should fail validation for polymorphic with invalid config")
+        void shouldFailValidationForPolymorphicMissUsage() {
+            SimpleFieldConfig config = new SimpleFieldConfig(new FoodMetadata(5, 0.5));
+
+            ValidationException exception = assertThrows(ValidationException.class, () -> {
+                validator.validate(config, "");
+            });
+
+            assertTrue(exception.getMessage().contains("Invalid @Polymorphic configuration: 'inline' and 'useKey' cannot both be true in"));
+        }
     }
 
     @Nested

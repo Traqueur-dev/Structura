@@ -113,12 +113,42 @@ public class ValueConverter {
         Class<?> elementType = getClassFromType(typeArgs[0]);
         Collection<Object> result = createCollection(collectionType);
 
+        // Check if element type uses key-as-discriminator mode
+        boolean useKeyAsDiscriminator = isPolymorphicWithKeyAsDiscriminator(elementType);
+
         if (value instanceof List<?> list) {
             for (Object item : list) {
                 result.add(convert(item, elementType, prefix));
             }
         } else if (value instanceof Map<?, ?> map) {
-            result.add(convert(map, elementType, prefix));
+            @SuppressWarnings("unchecked")
+            Map<String, Object> valueMap = (Map<String, Object>) value;
+
+            // If element type is polymorphic with useKeyAsDiscriminator and we have a Map,
+            // treat each map entry as a separate element with the key as discriminator
+            if (useKeyAsDiscriminator && Loadable.class.isAssignableFrom(elementType)) {
+                for (Map.Entry<String, Object> entry : valueMap.entrySet()) {
+                    String discriminatorValue = entry.getKey();
+                    Object itemValue = entry.getValue();
+
+                    // Enrich the item value with the discriminator
+                    Map<String, Object> enrichedValue = enrichWithDiscriminator(
+                        itemValue, discriminatorValue, elementType, prefix
+                    );
+
+                    result.add(convert(enrichedValue, elementType, prefix));
+                }
+            } else if (shouldTreatMapAsMultipleRecords(valueMap, elementType)) {
+                // For concrete (non-polymorphic) record types, if the Map contains multiple
+                // sections that look like separate records, treat each as a separate element
+                for (Map.Entry<String, Object> entry : valueMap.entrySet()) {
+                    Object itemValue = entry.getValue();
+                    result.add(convert(itemValue, elementType, prefix));
+                }
+            } else {
+                // Single map becomes a single element
+                result.add(convert(map, elementType, prefix));
+            }
         } else {
             result.add(convert(value, elementType, prefix));
         }
@@ -145,11 +175,34 @@ public class ValueConverter {
         @SuppressWarnings("unchecked")
         Map<String, Object> sourceMap = (Map<String, Object>) value;
 
-        return sourceMap.entrySet().stream()
-                .collect(Collectors.toMap(
-                        entry -> convert(entry.getKey(), keyType, prefix),
-                        entry -> convert(entry.getValue(), valueType, prefix)
-                ));
+        // Check if value type uses key-as-discriminator mode
+        boolean useKeyAsDiscriminator = isPolymorphicWithKeyAsDiscriminator(valueType);
+
+        if (useKeyAsDiscriminator && Loadable.class.isAssignableFrom(valueType)) {
+            // Use the map key as discriminator for each value
+            return sourceMap.entrySet().stream()
+                    .collect(Collectors.toMap(
+                            entry -> convert(entry.getKey(), keyType, prefix),
+                            entry -> {
+                                String discriminatorValue = entry.getKey();
+                                Object itemValue = entry.getValue();
+
+                                // Enrich the item value with the discriminator
+                                Map<String, Object> enrichedValue = enrichWithDiscriminator(
+                                    itemValue, discriminatorValue, valueType, prefix
+                                );
+
+                                return convert(enrichedValue, valueType, prefix);
+                            }
+                    ));
+        } else {
+            // Normal map conversion
+            return sourceMap.entrySet().stream()
+                    .collect(Collectors.toMap(
+                            entry -> convert(entry.getKey(), keyType, prefix),
+                            entry -> convert(entry.getValue(), valueType, prefix)
+                    ));
+        }
     }
 
     /**
@@ -304,5 +357,107 @@ public class ValueConverter {
      */
     private boolean isSettingsRecord(Class<?> type) {
         return type.isRecord() && Loadable.class.isAssignableFrom(type);
+    }
+
+    /**
+     * Checks if a type is polymorphic with useKeyAsDiscriminator enabled.
+     *
+     * @param type the type to check
+     * @return true if the type has @Polymorphic(useKey = true)
+     * @throws StructuraException if both inline and useKey are true
+     */
+    private boolean isPolymorphicWithKeyAsDiscriminator(Class<?> type) {
+        if (!Loadable.class.isAssignableFrom(type)) {
+            return false;
+        }
+        Polymorphic polymorphic = type.getAnnotation(Polymorphic.class);
+        if (polymorphic == null) {
+            return false;
+        }
+
+        return polymorphic.useKey();
+    }
+
+    /**
+     * Determines if a Map should be treated as multiple records for a collection.
+     * This is used for concrete (non-polymorphic) types where a YAML map structure
+     * represents multiple record instances.
+     *
+     * @param valueMap the Map value from YAML
+     * @param elementType the target element type
+     * @return true if each map entry should become a separate record
+     */
+    private boolean shouldTreatMapAsMultipleRecords(Map<String, Object> valueMap, Class<?> elementType) {
+        // Only applies to record types that implement Loadable
+        if (!elementType.isRecord() || !Loadable.class.isAssignableFrom(elementType)) {
+            return false;
+        }
+
+        // Empty map should result in empty list
+        if (valueMap.isEmpty()) {
+            return true;
+        }
+
+        // Get record field names (converted to kebab-case to match YAML)
+        Set<String> recordFieldNames = new HashSet<>();
+        for (var component : elementType.getRecordComponents()) {
+            recordFieldNames.add(this.recordFactory.getFieldMapper().convertCamelCaseToKebabCase(component.getName()));
+        }
+
+        // Check if all values in the map are Maps (indicating nested records)
+        boolean allValuesAreMaps = valueMap.values().stream()
+                .allMatch(v -> v instanceof Map);
+
+        if (!allValuesAreMaps) {
+            return false;
+        }
+
+        // Check if the keys of the map match the record field names
+        // If they do, it's a single record. If they don't, it's multiple records.
+        boolean keysMatchFields = recordFieldNames.containsAll(valueMap.keySet());
+
+        // If keys don't match record fields AND all values are Maps,
+        // treat as multiple records (each entry is a separate record)
+        return !keysMatchFields;
+    }
+
+    /**
+     * Enriches a value with a discriminator key for polymorphic resolution.
+     * The discriminator key is added to the value map using the key from @Polymorphic annotation.
+     *
+     * @param value the value to enrich (will be converted to a Map if it isn't one)
+     * @param discriminatorValue the discriminator value (typically the YAML key)
+     * @param type the polymorphic type
+     * @param prefix the path prefix for error messages
+     * @return a Map with the discriminator key added
+     */
+    private Map<String, Object> enrichWithDiscriminator(Object value, String discriminatorValue,
+                                                        Class<?> type, String prefix) {
+        Polymorphic polymorphic = type.getAnnotation(Polymorphic.class);
+        if (polymorphic == null) {
+            throw new StructuraException("Type " + type.getName() + " is not annotated with @Polymorphic at " + prefix);
+        }
+
+        String discriminatorKey = polymorphic.key();
+
+        // Convert value to Map if it isn't already
+        Map<String, Object> valueMap;
+        if (value instanceof Map<?, ?>) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> temp = (Map<String, Object>) value;
+            valueMap = new HashMap<>(temp);
+        } else if (value == null) {
+            valueMap = new HashMap<>();
+        } else {
+            throw new StructuraException(
+                "Expected Map for polymorphic type " + type.getName() + " at " + prefix +
+                " but got " + value.getClass().getName()
+            );
+        }
+
+        // Add discriminator key
+        valueMap.put(discriminatorKey, discriminatorValue);
+
+        return valueMap;
     }
 }
