@@ -176,6 +176,14 @@ class ValueConverterTest {
             assertFalse((Boolean) valueConverter.convert("FALSE", Boolean.class, "test"));
             assertFalse((Boolean) valueConverter.convert("anything_else", boolean.class, "test"));
         }
+
+
+        @Test
+        @DisplayName("Should handle LocalDate conversion from string")
+        void shouldHandleLocalDateConversion() {
+            var localDate = java.time.LocalDate.of(2023, 10, 5);
+            assertEquals(localDate, valueConverter.convert("2023-10-05", java.time.LocalDate.class, "test"));
+        }
     }
 
     @Nested

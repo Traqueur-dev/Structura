@@ -9,6 +9,8 @@ import fr.traqueur.structura.registries.PolymorphicRegistry;
 
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -17,6 +19,8 @@ import java.util.stream.Collectors;
  * It manages conversions for primitives, collections, maps, and records.
  */
 public class ValueConverter {
+
+    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE;
 
     private final RecordInstanceFactory recordFactory;
 
@@ -267,6 +271,10 @@ public class ValueConverter {
 
         if (targetType.isEnum()) {
             return convertToEnum(value, targetType);
+        }
+
+        if(targetType == LocalDate.class) {
+            return LocalDate.parse(value.toString(), DATE_FORMATTER);
         }
 
         if (targetType == int.class || targetType == Integer.class) {
