@@ -261,6 +261,34 @@ public final class TestFixtures {
           default-port: 27017
         """;
 
+    // ==================== Integration Test Enum Configurations ====================
+
+    public static final String LOADABLE_ENUM_FULL = """
+        debug:
+          description: "Debug level logging"
+          priority: 1
+        info:
+          description: "Info level logging"
+          priority: 2
+        warn:
+          description: "Warning level logging"
+          priority: 3
+        error:
+          description: "Error level logging"
+          priority: 4
+        """;
+
+    public static final String LOADABLE_ENUM_PARTIAL = """
+        debug:
+          description: "Debug from file"
+        info:
+          priority: 42
+        warn: {}
+        error:
+          description: "Error from file"
+          priority: 99
+        """;
+
     // ==================== Edge Cases ====================
 
     public static final String NULL_YAML = null;

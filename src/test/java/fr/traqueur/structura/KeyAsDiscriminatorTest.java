@@ -1,48 +1,33 @@
 package fr.traqueur.structura;
 
-import fr.traqueur.structura.annotations.Polymorphic;
-import fr.traqueur.structura.api.Loadable;
 import fr.traqueur.structura.api.Structura;
-import fr.traqueur.structura.exceptions.StructuraException;
-import fr.traqueur.structura.registries.PolymorphicRegistry;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
-import java.util.Map;
 
+import static fr.traqueur.structura.fixtures.TestModels.*;
+import static fr.traqueur.structura.helpers.TestHelpers.*;
+import static fr.traqueur.structura.helpers.PolymorphicTestHelper.*;
 import static org.junit.jupiter.api.Assertions.*;
 
-@DisplayName("Polymorphic useKeyAsDiscriminator Feature Tests")
+/**
+ * Refactored Polymorphic useKeyAsDiscriminator tests using common test models.
+ * Tests key-as-discriminator feature for polymorphic types.
+ */
+@DisplayName("Polymorphic useKeyAsDiscriminator Feature Tests - Refactored")
 class KeyAsDiscriminatorTest {
 
     @TempDir
     Path tempDir;
 
-    // Test polymorphic interface with useKeyAsDiscriminator enabled
-    @Polymorphic(useKey = true)
-    public interface ItemMetadata extends Loadable {}
-
-    // Implementations
-    public record FoodMetadata(int nutrition, double saturation) implements ItemMetadata {}
-    public record PotionMetadata(String color, String basePotionType) implements ItemMetadata {}
-    public record TrimMetadata(String material, String pattern) implements ItemMetadata {}
-    public record LeatherArmorMetadata(String color) implements ItemMetadata {}
-
-    // Test records for different contexts
-    public record SimpleFieldConfig(ItemMetadata trim) implements Loadable {}
-    public record ListFieldConfig(List<ItemMetadata> metadata) implements Loadable {}
-    public record MapFieldConfig(Map<String, ItemMetadata> metadata) implements Loadable {}
-
     @BeforeEach
     void setUp() {
         clearAllRegistries();
 
-        // Register implementations
-        PolymorphicRegistry.create(ItemMetadata.class, registry -> {
+        // Register ItemMetadata implementations
+        createPolymorphicRegistry(ItemMetadata.class, registry -> {
             registry.register("food", FoodMetadata.class);
             registry.register("potion", PotionMetadata.class);
             registry.register("trim", TrimMetadata.class);
@@ -55,22 +40,9 @@ class KeyAsDiscriminatorTest {
         clearAllRegistries();
     }
 
-    private void clearAllRegistries() {
-        try {
-            var field = PolymorphicRegistry.class.getDeclaredField("REGISTRIES");
-            field.setAccessible(true);
-            ((java.util.Map<?, ?>) field.get(null)).clear();
-        } catch (Exception e) {
-            fail("Failed to clear registries: " + e.getMessage());
-        }
-    }
-
     @Nested
     @DisplayName("Simple Field Context")
     class SimpleFieldContextTest {
-
-        // Test record with food field
-        public record ConfigWithFoodLocal(ItemMetadata food) implements Loadable {}
 
         @Test
         @DisplayName("Should use field name as discriminator for simple polymorphic field")
@@ -81,18 +53,21 @@ class KeyAsDiscriminatorTest {
                       pattern: VEX
                     """;
 
-            Path yamlFile = tempDir.resolve("config.yml");
-            Files.writeString(yamlFile, yaml);
+            Path yamlFile = createTempYamlFile(yaml);
 
-            SimpleFieldConfig config = Structura.load(yamlFile, SimpleFieldConfig.class);
+            try {
+                SimpleFieldConfig config = Structura.load(yamlFile, SimpleFieldConfig.class);
 
-            assertNotNull(config);
-            assertNotNull(config.trim());
-            assertInstanceOf(TrimMetadata.class, config.trim());
+                assertNotNull(config);
+                assertNotNull(config.trim());
+                assertInstanceOf(TrimMetadata.class, config.trim());
 
-            TrimMetadata trim = (TrimMetadata) config.trim();
-            assertEquals("DIAMOND", trim.material());
-            assertEquals("VEX", trim.pattern());
+                TrimMetadata trim = (TrimMetadata) config.trim();
+                assertEquals("DIAMOND", trim.material());
+                assertEquals("VEX", trim.pattern());
+            } finally {
+                deleteTempFile(yamlFile);
+            }
         }
 
         @Test
@@ -104,18 +79,21 @@ class KeyAsDiscriminatorTest {
                       saturation: 9.6
                     """;
 
-            Path yamlFile = tempDir.resolve("config.yml");
-            Files.writeString(yamlFile, yaml);
+            Path yamlFile = createTempYamlFile(yaml);
 
-            ConfigWithFoodLocal config = Structura.load(yamlFile, ConfigWithFoodLocal.class);
+            try {
+                ConfigWithFood config = Structura.load(yamlFile, ConfigWithFood.class);
 
-            assertNotNull(config);
-            assertNotNull(config.food());
-            assertInstanceOf(FoodMetadata.class, config.food());
+                assertNotNull(config);
+                assertNotNull(config.food());
+                assertInstanceOf(FoodMetadata.class, config.food());
 
-            FoodMetadata food = (FoodMetadata) config.food();
-            assertEquals(8, food.nutrition());
-            assertEquals(9.6, food.saturation());
+                FoodMetadata food = (FoodMetadata) config.food();
+                assertEquals(8, food.nutrition());
+                assertEquals(9.6, food.saturation());
+            } finally {
+                deleteTempFile(yamlFile);
+            }
         }
     }
 
@@ -139,37 +117,40 @@ class KeyAsDiscriminatorTest {
                         pattern: VEX
                     """;
 
-            Path yamlFile = tempDir.resolve("config.yml");
-            Files.writeString(yamlFile, yaml);
+            Path yamlFile = createTempYamlFile(yaml);
 
-            ListFieldConfig config = Structura.load(yamlFile, ListFieldConfig.class);
+            try {
+                ListFieldConfig config = Structura.load(yamlFile, ListFieldConfig.class);
 
-            assertNotNull(config);
-            assertNotNull(config.metadata());
-            assertEquals(3, config.metadata().size());
+                assertNotNull(config);
+                assertNotNull(config.metadata());
+                assertEquals(3, config.metadata().size());
 
-            // Verify each element
-            boolean hasFood = false, hasPotion = false, hasTrim = false;
+                // Verify each element
+                boolean hasFood = false, hasPotion = false, hasTrim = false;
 
-            for (ItemMetadata item : config.metadata()) {
-                if (item instanceof FoodMetadata food) {
-                    hasFood = true;
-                    assertEquals(8, food.nutrition());
-                    assertEquals(9.6, food.saturation());
-                } else if (item instanceof PotionMetadata potion) {
-                    hasPotion = true;
-                    assertEquals("#FF0000", potion.color());
-                    assertEquals("STRENGTH", potion.basePotionType());
-                } else if (item instanceof TrimMetadata trim) {
-                    hasTrim = true;
-                    assertEquals("NETHERITE", trim.material());
-                    assertEquals("VEX", trim.pattern());
+                for (ItemMetadata item : config.metadata()) {
+                    if (item instanceof FoodMetadata(int nutrition, double saturation)) {
+                        hasFood = true;
+                        assertEquals(8, nutrition);
+                        assertEquals(9.6, saturation);
+                    } else if (item instanceof PotionMetadata(String color, String basePotionType)) {
+                        hasPotion = true;
+                        assertEquals("#FF0000", color);
+                        assertEquals("STRENGTH", basePotionType);
+                    } else if (item instanceof TrimMetadata(String material, String pattern)) {
+                        hasTrim = true;
+                        assertEquals("NETHERITE", material);
+                        assertEquals("VEX", pattern);
+                    }
                 }
-            }
 
-            assertTrue(hasFood, "Should contain FoodMetadata");
-            assertTrue(hasPotion, "Should contain PotionMetadata");
-            assertTrue(hasTrim, "Should contain TrimMetadata");
+                assertTrue(hasFood, "Should contain FoodMetadata");
+                assertTrue(hasPotion, "Should contain PotionMetadata");
+                assertTrue(hasTrim, "Should contain TrimMetadata");
+            } finally {
+                deleteTempFile(yamlFile);
+            }
         }
 
         @Test
@@ -179,14 +160,17 @@ class KeyAsDiscriminatorTest {
                     metadata: {}
                     """;
 
-            Path yamlFile = tempDir.resolve("config.yml");
-            Files.writeString(yamlFile, yaml);
+            Path yamlFile = createTempYamlFile(yaml);
 
-            ListFieldConfig config = Structura.load(yamlFile, ListFieldConfig.class);
+            try {
+                ListFieldConfig config = Structura.load(yamlFile, ListFieldConfig.class);
 
-            assertNotNull(config);
-            assertNotNull(config.metadata());
-            assertTrue(config.metadata().isEmpty());
+                assertNotNull(config);
+                assertNotNull(config.metadata());
+                assertTrue(config.metadata().isEmpty());
+            } finally {
+                deleteTempFile(yamlFile);
+            }
         }
     }
 
@@ -206,29 +190,32 @@ class KeyAsDiscriminatorTest {
                         color: "#FF0000"
                     """;
 
-            Path yamlFile = tempDir.resolve("config.yml");
-            Files.writeString(yamlFile, yaml);
+            Path yamlFile = createTempYamlFile(yaml);
 
-            MapFieldConfig config = Structura.load(yamlFile, MapFieldConfig.class);
+            try {
+                MapFieldConfig config = Structura.load(yamlFile, MapFieldConfig.class);
 
-            assertNotNull(config);
-            assertNotNull(config.metadata());
-            assertEquals(2, config.metadata().size());
+                assertNotNull(config);
+                assertNotNull(config.metadata());
+                assertEquals(2, config.metadata().size());
 
-            // Verify food entry
-            assertTrue(config.metadata().containsKey("food"));
-            ItemMetadata foodItem = config.metadata().get("food");
-            assertInstanceOf(FoodMetadata.class, foodItem);
-            FoodMetadata food = (FoodMetadata) foodItem;
-            assertEquals(8, food.nutrition());
-            assertEquals(9.6, food.saturation());
+                // Verify food entry
+                assertTrue(config.metadata().containsKey("food"));
+                ItemMetadata foodItem = config.metadata().get("food");
+                assertInstanceOf(FoodMetadata.class, foodItem);
+                FoodMetadata food = (FoodMetadata) foodItem;
+                assertEquals(8, food.nutrition());
+                assertEquals(9.6, food.saturation());
 
-            // Verify leather-armor entry
-            assertTrue(config.metadata().containsKey("leather-armor"));
-            ItemMetadata armorItem = config.metadata().get("leather-armor");
-            assertInstanceOf(LeatherArmorMetadata.class, armorItem);
-            LeatherArmorMetadata armor = (LeatherArmorMetadata) armorItem;
-            assertEquals("#FF0000", armor.color());
+                // Verify leather-armor entry
+                assertTrue(config.metadata().containsKey("leather-armor"));
+                ItemMetadata armorItem = config.metadata().get("leather-armor");
+                assertInstanceOf(LeatherArmorMetadata.class, armorItem);
+                LeatherArmorMetadata armor = (LeatherArmorMetadata) armorItem;
+                assertEquals("#FF0000", armor.color());
+            } finally {
+                deleteTempFile(yamlFile);
+            }
         }
 
         @Test
@@ -238,26 +225,23 @@ class KeyAsDiscriminatorTest {
                     metadata: {}
                     """;
 
-            Path yamlFile = tempDir.resolve("config.yml");
-            Files.writeString(yamlFile, yaml);
+            Path yamlFile = createTempYamlFile(yaml);
 
-            MapFieldConfig config = Structura.load(yamlFile, MapFieldConfig.class);
+            try {
+                MapFieldConfig config = Structura.load(yamlFile, MapFieldConfig.class);
 
-            assertNotNull(config);
-            assertNotNull(config.metadata());
-            assertTrue(config.metadata().isEmpty());
+                assertNotNull(config);
+                assertNotNull(config.metadata());
+                assertTrue(config.metadata().isEmpty());
+            } finally {
+                deleteTempFile(yamlFile);
+            }
         }
     }
 
     @Nested
     @DisplayName("Combined Context Test")
     class CombinedContextTest {
-
-        public record ComplexConfig(
-            ItemMetadata trim,
-            List<ItemMetadata> items,
-            Map<String, ItemMetadata> namedItems
-        ) implements Loadable {}
 
         @Test
         @DisplayName("Should handle all three contexts in one config")
@@ -282,33 +266,36 @@ class KeyAsDiscriminatorTest {
                         pattern: SILENCE
                     """;
 
-            Path yamlFile = tempDir.resolve("config.yml");
-            Files.writeString(yamlFile, yaml);
+            Path yamlFile = createTempYamlFile(yaml);
 
-            ComplexConfig config = Structura.load(yamlFile, ComplexConfig.class);
+            try {
+                ComplexKeyDiscriminatorConfig config = Structura.load(yamlFile, ComplexKeyDiscriminatorConfig.class);
 
-            assertNotNull(config);
+                assertNotNull(config);
 
-            // Verify simple field
-            assertNotNull(config.trim());
-            assertInstanceOf(TrimMetadata.class, config.trim());
-            assertEquals("DIAMOND", ((TrimMetadata) config.trim()).material());
+                // Verify simple field
+                assertNotNull(config.trim());
+                assertInstanceOf(TrimMetadata.class, config.trim());
+                assertEquals("DIAMOND", ((TrimMetadata) config.trim()).material());
 
-            // Verify list
-            assertNotNull(config.items());
-            assertEquals(2, config.items().size());
+                // Verify list
+                assertNotNull(config.items());
+                assertEquals(2, config.items().size());
 
-            // Verify map
-            assertNotNull(config.namedItems());
-            assertEquals(2, config.namedItems().size());
-            assertTrue(config.namedItems().containsKey("food"));
-            assertTrue(config.namedItems().containsKey("trim"));
+                // Verify map
+                assertNotNull(config.namedItems());
+                assertEquals(2, config.namedItems().size());
+                assertTrue(config.namedItems().containsKey("food"));
+                assertTrue(config.namedItems().containsKey("trim"));
 
-            // Verify map contents
-            assertInstanceOf(FoodMetadata.class, config.namedItems().get("food"));
-            assertEquals(10, ((FoodMetadata) config.namedItems().get("food")).nutrition());
-            assertInstanceOf(TrimMetadata.class, config.namedItems().get("trim"));
-            assertEquals("NETHERITE", ((TrimMetadata) config.namedItems().get("trim")).material());
+                // Verify map contents
+                assertInstanceOf(FoodMetadata.class, config.namedItems().get("food"));
+                assertEquals(10, ((FoodMetadata) config.namedItems().get("food")).nutrition());
+                assertInstanceOf(TrimMetadata.class, config.namedItems().get("trim"));
+                assertEquals("NETHERITE", ((TrimMetadata) config.namedItems().get("trim")).material());
+            } finally {
+                deleteTempFile(yamlFile);
+            }
         }
     }
 }

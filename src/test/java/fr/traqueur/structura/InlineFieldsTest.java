@@ -1,10 +1,5 @@
 package fr.traqueur.structura;
 
-import fr.traqueur.structura.annotations.Options;
-import fr.traqueur.structura.annotations.defaults.DefaultBool;
-import fr.traqueur.structura.annotations.defaults.DefaultInt;
-import fr.traqueur.structura.annotations.defaults.DefaultString;
-import fr.traqueur.structura.api.Loadable;
 import fr.traqueur.structura.conversion.ValueConverter;
 import fr.traqueur.structura.exceptions.StructuraException;
 import fr.traqueur.structura.factory.RecordInstanceFactory;
@@ -16,110 +11,25 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Map;
 
+import static fr.traqueur.structura.fixtures.TestModels.*;
 import static org.junit.jupiter.api.Assertions.*;
 
-@DisplayName("Inline Fields - Field Flattening Tests")
+/**
+ * Refactored Inline Fields tests using common test models.
+ * Tests field flattening behavior with @Options(inline = true).
+ */
+@DisplayName("Inline Fields - Refactored Tests")
 class InlineFieldsTest {
 
     private RecordInstanceFactory recordFactory;
-    private ValueConverter valueConverter;
 
     @BeforeEach
     void setUp() {
         FieldMapper fieldMapper = new FieldMapper();
         recordFactory = new RecordInstanceFactory(fieldMapper);
-        valueConverter = new ValueConverter(recordFactory);
+        ValueConverter valueConverter = new ValueConverter(recordFactory);
         recordFactory.setValueConverter(valueConverter);
     }
-
-    // ===== Test Records =====
-
-    public record ServerInfo(
-            @DefaultString("localhost") String host,
-            @DefaultInt(8080) int port,
-            @DefaultString("http") String protocol
-    ) implements Loadable {}
-
-    public record DatabaseInfo(
-            @DefaultString("localhost") String host,
-            @DefaultInt(5432) int port,
-            @DefaultString("postgres") String database
-    ) implements Loadable {}
-
-    public record AuthInfo(
-            @DefaultString("user") String username,
-            @DefaultString("password") String password
-    ) implements Loadable {}
-
-    // Configuration with inline field
-    public record AppConfigWithInline(
-            String appName,
-            @Options(inline = true) ServerInfo server,
-            @DefaultBool(false) boolean debugMode
-    ) implements Loadable {}
-
-    // Configuration with multiple inline fields
-    public record AppConfigWithMultipleInline(
-            String appName,
-            @Options(inline = true) ServerInfo server,
-            @Options(inline = true) DatabaseInfo database
-    ) implements Loadable {}
-
-    // Configuration mixing inline and non-inline fields
-    public record AppConfigMixed(
-            String appName,
-            @Options(inline = true) ServerInfo server,
-            DatabaseInfo database  // Not inline
-    ) implements Loadable {}
-
-    // Configuration with inline field with custom name
-    public record AppConfigWithCustomName(
-            String appName,
-            @Options(inline = true, name = "srv") ServerInfo server
-    ) implements Loadable {}
-
-    // Nested inline configuration
-    public record NestedConfig(
-            String name,
-            @Options(inline = true) AuthInfo auth
-    ) implements Loadable {}
-
-    public record OuterConfig(
-            @Options(inline = true) NestedConfig nested,
-            @DefaultString("outer") String level
-    ) implements Loadable {}
-
-    // Edge case records
-    public record AllDefaultsConfig(
-            @DefaultString("DefaultApp") String appName,
-            @Options(inline = true) ServerInfo server
-    ) implements Loadable {}
-
-    public record StrictServerInfo(
-            String host,  // No default - required
-            @DefaultInt(8080) int port
-    ) implements Loadable {}
-
-    public record StrictConfig(
-            String appName,
-            @Options(inline = true) StrictServerInfo server
-    ) implements Loadable {}
-
-    public record InvalidInlineConfig(
-            String appName,
-            @Options(inline = true) String value  // String is not a record
-    ) implements Loadable {}
-
-    // Backward compatibility records
-    public record TraditionalConfig(
-            String appName,
-            ServerInfo server  // No @Options(inline = true)
-    ) implements Loadable {}
-
-    public record NoOptionsConfig(
-            String appName,
-            ServerInfo server  // No @Options
-    ) implements Loadable {}
 
     @Nested
     @DisplayName("Basic Inline Field Behavior")
@@ -195,16 +105,16 @@ class InlineFieldsTest {
         void shouldHandleMultipleInlineFields() {
             Map<String, Object> data = Map.of(
                     "app-name", "MultiInlineApp",
-                    // ServerInfo fields
+                    // NestedKeyRecord (server) fields
                     "host", "server.example.com",
                     "port", 9090,
                     "protocol", "https",
-                    // DatabaseInfo fields - note: also has host, port, and database
+                    // DatabaseConfig fields - note: also has host, port, and database
                     "database", "production_db"
             );
 
-            // This should work because ServerInfo gets host/port/protocol
-            // and DatabaseInfo gets host/port/database
+            // This should work because NestedKeyRecord gets host/port/protocol
+            // and DatabaseConfig gets host/port/database
             // They share the same host and port values from the YAML
             AppConfigWithMultipleInline result = (AppConfigWithMultipleInline) recordFactory.createInstance(
                     data, AppConfigWithMultipleInline.class, ""
@@ -326,8 +236,8 @@ class InlineFieldsTest {
         @DisplayName("Should handle nested inline configurations")
         void shouldHandleNestedInlineConfigurations() {
             Map<String, Object> data = Map.of(
-                    // OuterConfig has inline NestedConfig
-                    // NestedConfig has inline AuthInfo
+                    // OuterInlineConfig has inline InlineNestedConfig
+                    // InlineNestedConfig has inline AuthInfo
                     // So all fields should be at root level
                     "name", "MyNestedConfig",
                     "username", "admin",
@@ -335,8 +245,8 @@ class InlineFieldsTest {
                     "level", "production"
             );
 
-            OuterConfig result = (OuterConfig) recordFactory.createInstance(
-                    data, OuterConfig.class, ""
+            OuterInlineConfig result = (OuterInlineConfig) recordFactory.createInstance(
+                    data, OuterInlineConfig.class, ""
             );
 
             assertEquals("MyNestedConfig", result.nested().name());
@@ -353,8 +263,8 @@ class InlineFieldsTest {
                     // username, password, level missing
             );
 
-            OuterConfig result = (OuterConfig) recordFactory.createInstance(
-                    data, OuterConfig.class, ""
+            OuterInlineConfig result = (OuterInlineConfig) recordFactory.createInstance(
+                    data, OuterInlineConfig.class, ""
             );
 
             assertEquals("MinimalNested", result.nested().name());
@@ -373,8 +283,8 @@ class InlineFieldsTest {
         void shouldWorkWithEmptyYAMLWhenAllHaveDefaults() {
             Map<String, Object> data = Map.of();
 
-            AllDefaultsConfig result = (AllDefaultsConfig) recordFactory.createInstance(
-                    data, AllDefaultsConfig.class, ""
+            AllDefaultsInlineConfig result = (AllDefaultsInlineConfig) recordFactory.createInstance(
+                    data, AllDefaultsInlineConfig.class, ""
             );
 
             assertEquals("DefaultApp", result.appName());
@@ -392,7 +302,7 @@ class InlineFieldsTest {
             );
 
             assertThrows(StructuraException.class, () ->
-                    recordFactory.createInstance(data, StrictConfig.class, "")
+                    recordFactory.createInstance(data, StrictInlineConfig.class, "")
             );
         }
 
@@ -431,8 +341,8 @@ class InlineFieldsTest {
                     )
             );
 
-            TraditionalConfig result = (TraditionalConfig) recordFactory.createInstance(
-                    data, TraditionalConfig.class, ""
+            TraditionalNestedConfig result = (TraditionalNestedConfig) recordFactory.createInstance(
+                    data, TraditionalNestedConfig.class, ""
             );
 
             assertEquals("TraditionalApp", result.appName());
@@ -452,8 +362,8 @@ class InlineFieldsTest {
                     )
             );
 
-            NoOptionsConfig result = (NoOptionsConfig) recordFactory.createInstance(
-                    data, NoOptionsConfig.class, ""
+            NoOptionsNestedConfig result = (NoOptionsNestedConfig) recordFactory.createInstance(
+                    data, NoOptionsNestedConfig.class, ""
             );
 
             assertEquals("DefaultBehavior", result.appName());
