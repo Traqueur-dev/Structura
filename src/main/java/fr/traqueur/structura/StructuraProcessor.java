@@ -23,7 +23,7 @@ import java.util.stream.Collectors;
 public class StructuraProcessor {
 
     private final boolean validateOnParse;
-    private final Yaml yaml;
+    private Yaml yaml; // Not final for lazy initialization
 
     private final RecordInstanceFactory recordFactory;
     private final FieldMapper fieldMapper;
@@ -35,14 +35,27 @@ public class StructuraProcessor {
      * @param validateOnParse if true, validates instances after parsing
      */
     public StructuraProcessor(boolean validateOnParse) {
-        this.yaml = new Yaml();
         this.validateOnParse = validateOnParse;
+        // yaml will be initialized on first use (lazy initialization)
 
         this.fieldMapper = new FieldMapper();
         this.recordFactory = new RecordInstanceFactory(fieldMapper);
 
         this.valueConverter = new ValueConverter(recordFactory);
         recordFactory.setValueConverter(valueConverter);
+    }
+
+    /**
+     * Gets the Yaml instance, initializing it lazily on first access.
+     * This improves performance by only creating the Yaml parser when needed.
+     *
+     * @return the Yaml instance
+     */
+    private Yaml getYaml() {
+        if (yaml == null) {
+            yaml = new Yaml();
+        }
+        return yaml;
     }
 
     /**
@@ -58,7 +71,7 @@ public class StructuraProcessor {
         validateInput(yamlString, settingsClass);
 
         try {
-            Map<String, Object> settings = yaml.load(yamlString);
+            Map<String, Object> settings = getYaml().load(yamlString);
             if (settings == null) {
                 settings = Map.of();
             }
@@ -90,7 +103,7 @@ public class StructuraProcessor {
         validateInput(yamlString, enumClass);
 
         try {
-            Map<String, Object> settings = yaml.load(yamlString);
+            Map<String, Object> settings = getYaml().load(yamlString);
             if (settings == null) {
                 throw new StructuraException("YAML content is empty or null for enum " + enumClass.getName());
             }

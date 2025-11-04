@@ -110,50 +110,102 @@ public class ValueConverter {
             throw new StructuraException("Collection type missing generic parameter at " + prefix);
         }
 
-        Class<?> elementType = getClassFromType(typeArgs[0]);
+        Type elementGenericType = typeArgs[0];
+        Class<?> elementType = getClassFromType(elementGenericType);
         Collection<Object> result = createCollection(collectionType);
 
         // Check if element type uses key-as-discriminator mode
         boolean useKeyAsDiscriminator = isPolymorphicWithKeyAsDiscriminator(elementType);
 
         if (value instanceof List<?> list) {
-            for (Object item : list) {
-                result.add(convert(item, elementType, prefix));
-            }
+            convertListElements(list, elementGenericType, elementType, result, prefix);
         } else if (value instanceof Map<?, ?> map) {
             @SuppressWarnings("unchecked")
             Map<String, Object> valueMap = (Map<String, Object>) value;
-
-            // If element type is polymorphic with useKeyAsDiscriminator and we have a Map,
-            // treat each map entry as a separate element with the key as discriminator
-            if (useKeyAsDiscriminator && Loadable.class.isAssignableFrom(elementType)) {
-                for (Map.Entry<String, Object> entry : valueMap.entrySet()) {
-                    String discriminatorValue = entry.getKey();
-                    Object itemValue = entry.getValue();
-
-                    // Enrich the item value with the discriminator
-                    Map<String, Object> enrichedValue = enrichWithDiscriminator(
-                        itemValue, discriminatorValue, elementType, prefix
-                    );
-
-                    result.add(convert(enrichedValue, elementType, prefix));
-                }
-            } else if (shouldTreatMapAsMultipleRecords(valueMap, elementType)) {
-                // For concrete (non-polymorphic) record types, if the Map contains multiple
-                // sections that look like separate records, treat each as a separate element
-                for (Map.Entry<String, Object> entry : valueMap.entrySet()) {
-                    Object itemValue = entry.getValue();
-                    result.add(convert(itemValue, elementType, prefix));
-                }
-            } else {
-                // Single map becomes a single element
-                result.add(convert(map, elementType, prefix));
-            }
+            convertMapToCollection(valueMap, elementGenericType, elementType, result, useKeyAsDiscriminator, prefix);
         } else {
-            result.add(convert(value, elementType, prefix));
+            result.add(convert(value, elementGenericType, elementType, prefix));
         }
 
         return result;
+    }
+
+    /**
+     * Converts list elements to the target collection type.
+     *
+     * @param list the source list
+     * @param elementGenericType the generic type of elements (may include type parameters)
+     * @param elementRawType the raw type of elements
+     * @param result the target collection to populate
+     * @param prefix the path prefix for error messages
+     */
+    private void convertListElements(List<?> list, Type elementGenericType, Class<?> elementRawType,
+                                     Collection<Object> result, String prefix) {
+        for (Object item : list) {
+            result.add(convert(item, elementGenericType, elementRawType, prefix));
+        }
+    }
+
+    /**
+     * Converts a map to a collection, handling polymorphic and record-based mappings.
+     *
+     * @param valueMap the source map
+     * @param elementGenericType the generic type of elements (may include type parameters)
+     * @param elementRawType the raw type of elements
+     * @param result the target collection to populate
+     * @param useKeyAsDiscriminator whether to use keys as discriminators
+     * @param prefix the path prefix for error messages
+     */
+    private void convertMapToCollection(Map<String, Object> valueMap, Type elementGenericType, Class<?> elementRawType,
+                                       Collection<Object> result,
+                                       boolean useKeyAsDiscriminator, String prefix) {
+        if (useKeyAsDiscriminator && Loadable.class.isAssignableFrom(elementRawType)) {
+            convertPolymorphicMapEntries(valueMap, elementGenericType, elementRawType, result, prefix);
+        } else if (shouldTreatMapAsMultipleRecords(valueMap, elementRawType)) {
+            convertMapEntriesToRecords(valueMap, elementGenericType, elementRawType, result, prefix);
+        } else {
+            result.add(convert(valueMap, elementGenericType, elementRawType, prefix));
+        }
+    }
+
+    /**
+     * Converts map entries as polymorphic elements using keys as discriminators.
+     *
+     * @param valueMap the source map
+     * @param elementGenericType the generic type of elements (may include type parameters)
+     * @param elementRawType the raw type of elements
+     * @param result the target collection to populate
+     * @param prefix the path prefix for error messages
+     */
+    private void convertPolymorphicMapEntries(Map<String, Object> valueMap, Type elementGenericType, Class<?> elementRawType,
+                                             Collection<Object> result, String prefix) {
+        for (Map.Entry<String, Object> entry : valueMap.entrySet()) {
+            String discriminatorValue = entry.getKey();
+            Object itemValue = entry.getValue();
+
+            Map<String, Object> enrichedValue = enrichWithDiscriminator(
+                itemValue, discriminatorValue, elementRawType, prefix
+            );
+
+            result.add(convert(enrichedValue, elementGenericType, elementRawType, prefix));
+        }
+    }
+
+    /**
+     * Converts map entries to separate records.
+     *
+     * @param valueMap the source map
+     * @param elementGenericType the generic type of elements (may include type parameters)
+     * @param elementRawType the raw type of elements
+     * @param result the target collection to populate
+     * @param prefix the path prefix for error messages
+     */
+    private void convertMapEntriesToRecords(Map<String, Object> valueMap, Type elementGenericType, Class<?> elementRawType,
+                                           Collection<Object> result, String prefix) {
+        for (Map.Entry<String, Object> entry : valueMap.entrySet()) {
+            Object itemValue = entry.getValue();
+            result.add(convert(itemValue, elementGenericType, elementRawType, prefix));
+        }
     }
 
     /**
@@ -379,6 +431,20 @@ public class ValueConverter {
     }
 
     /**
+     * Gets all field names of a record type converted to kebab-case.
+     * This is a utility method to avoid code duplication.
+     *
+     * @param recordType the record type
+     * @return a set of field names in kebab-case
+     */
+    private Set<String> getRecordFieldNamesAsKebabCase(Class<?> recordType) {
+        return Arrays.stream(recordType.getRecordComponents())
+            .map(component -> recordFactory.getFieldMapper()
+                .convertCamelCaseToKebabCase(component.getName()))
+            .collect(Collectors.toSet());
+    }
+
+    /**
      * Determines if a Map should be treated as multiple records for a collection.
      * This is used for concrete (non-polymorphic) types where a YAML map structure
      * represents multiple record instances.
@@ -399,10 +465,7 @@ public class ValueConverter {
         }
 
         // Get record field names (converted to kebab-case to match YAML)
-        Set<String> recordFieldNames = new HashSet<>();
-        for (var component : elementType.getRecordComponents()) {
-            recordFieldNames.add(this.recordFactory.getFieldMapper().convertCamelCaseToKebabCase(component.getName()));
-        }
+        Set<String> recordFieldNames = getRecordFieldNamesAsKebabCase(elementType);
 
         // Check if all values in the map are Maps (indicating nested records)
         boolean allValuesAreMaps = valueMap.values().stream()

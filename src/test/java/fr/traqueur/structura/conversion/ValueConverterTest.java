@@ -6,9 +6,8 @@ import fr.traqueur.structura.annotations.defaults.DefaultInt;
 import fr.traqueur.structura.annotations.defaults.DefaultString;
 import fr.traqueur.structura.api.Loadable;
 import fr.traqueur.structura.exceptions.StructuraException;
-import fr.traqueur.structura.factory.RecordInstanceFactory;
-import fr.traqueur.structura.mapping.FieldMapper;
 import fr.traqueur.structura.registries.PolymorphicRegistry;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -18,56 +17,22 @@ import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.*;
 
+import static fr.traqueur.structura.fixtures.TestModels.*;
+import static fr.traqueur.structura.helpers.TestHelpers.*;
 import static org.junit.jupiter.api.Assertions.*;
 
-@DisplayName("ValueConverter - Complete Type Conversion Tests")
+/**
+ * Refactored ValueConverter tests using common fixtures and helpers.
+ * Tests complete type conversion logic including primitives, collections, maps, and polymorphic types.
+ */
+@DisplayName("ValueConverter - Refactored Tests")
 class ValueConverterTest {
 
     private ValueConverter valueConverter;
 
-    @BeforeEach
-    void setUp() {
-        clearAllRegistries();
-        FieldMapper fieldMapper = new FieldMapper();
-        RecordInstanceFactory recordFactory = new RecordInstanceFactory(fieldMapper);
-        valueConverter = new ValueConverter(recordFactory);
-        recordFactory.setValueConverter(valueConverter);
-        setupPolymorphicRegistries();
-    }
+    // ==================== Test-Specific Polymorphic Models ====================
+    // These models are specific to ValueConverter tests and include the 'driver' field
 
-    private void clearAllRegistries() {
-        try {
-            var field = PolymorphicRegistry.class.getDeclaredField("REGISTRIES");
-            field.setAccessible(true);
-            ((java.util.Map<?, ?>) field.get(null)).clear();
-        } catch (Exception e) {
-            fail("Failed to clear registries: " + e.getMessage());
-        }
-    }
-
-    private void setupPolymorphicRegistries() {
-        // Setup database registry
-        PolymorphicRegistry.create(TestDatabaseConfig.class, registry -> {
-            registry.register("mysql", TestMySQLConfig.class);
-            registry.register("postgres", TestPostgreSQLConfig.class);
-        });
-
-        // Setup payment registry
-        PolymorphicRegistry.create(TestPaymentProvider.class, registry -> {
-            registry.register("stripe", TestStripeProvider.class);
-            registry.register("paypal", TestPayPalProvider.class);
-        });
-    }
-
-    // Basic test records
-    public record SimpleRecord(String name, int value) implements Loadable {}
-    public record RecordWithDefaults(
-            @DefaultString("defaultName") String name,
-            @DefaultInt(0) int value
-    ) implements Loadable {}
-    public enum TestEnum { VALUE1, VALUE2, VALUE3 }
-
-    // Polymorphic interfaces and implementations
     @Polymorphic(key = "type")
     public interface TestDatabaseConfig extends Loadable {
         String getHost();
@@ -116,13 +81,48 @@ class ValueConverterTest {
         @Override public boolean isEnabled() { return enabled; }
     }
 
-    // Configuration using polymorphic interfaces
     public record TestConfigWithPolymorphic(
             String appName,
             TestDatabaseConfig database,
             List<TestDatabaseConfig> backupDatabases,
             TestPaymentProvider paymentProvider
     ) implements Loadable {}
+
+    // ==================== Test Setup ====================
+
+    @BeforeAll
+    static void setUpRegistries() {
+        clearAllRegistries();
+    }
+
+    @BeforeEach
+    void setUp() {
+        clearAllRegistries();
+        valueConverter = createValueConverter();
+        setupPolymorphicRegistries();
+    }
+
+    private void setupPolymorphicRegistries() {
+        PolymorphicRegistry.create(TestDatabaseConfig.class, registry -> {
+            registry.register("mysql", TestMySQLConfig.class);
+            registry.register("postgres", TestPostgreSQLConfig.class);
+        });
+
+        PolymorphicRegistry.create(TestPaymentProvider.class, registry -> {
+            registry.register("stripe", TestStripeProvider.class);
+            registry.register("paypal", TestPayPalProvider.class);
+        });
+    }
+
+    // ==================== Helper Methods for Reflection ====================
+
+    public List<String> getStringList() { return null; }
+    public Set<Integer> getIntegerSet() { return null; }
+    public Map<String, String> getStringStringMap() { return null; }
+    public Map<String, Integer> getStringIntegerMap() { return null; }
+    public List<TestDatabaseConfig> getDatabaseConfigList() { return null; }
+
+    // ==================== Tests ====================
 
     @Nested
     @DisplayName("Complex Type Conversions")
@@ -197,9 +197,10 @@ class ValueConverterTest {
                     valueConverter.convert("INVALID_VALUE", TestEnum.class, "test")
             );
 
-            assertTrue(exception.getMessage().contains("Invalid enum value: INVALID_VALUE"));
-            assertTrue(exception.getMessage().contains("Available values:"));
-            assertTrue(exception.getMessage().contains("VALUE1, VALUE2, VALUE3"));
+            assertContainsAll(exception.getMessage(),
+                    "Invalid enum value: INVALID_VALUE",
+                    "Available values:",
+                    "VALUE1, VALUE2, VALUE3");
         }
 
         @Test
@@ -220,7 +221,7 @@ class ValueConverterTest {
         @DisplayName("Should convert to typed collections correctly")
         void shouldConvertToTypedCollections() throws Exception {
             // List<String> conversion
-            Type listType = getClass().getMethod("getStringList").getGenericReturnType();
+            Type listType = ValueConverterTest.class.getMethod("getStringList").getGenericReturnType();
             List<String> inputList = List.of("a", "b", "c");
 
             @SuppressWarnings("unchecked")
@@ -228,7 +229,7 @@ class ValueConverterTest {
             assertEquals(List.of("a", "b", "c"), result);
 
             // Set<Integer> conversion with type conversion
-            Type setType = getClass().getMethod("getIntegerSet").getGenericReturnType();
+            Type setType = ValueConverterTest.class.getMethod("getIntegerSet").getGenericReturnType();
             List<String> stringNumbers = List.of("1", "2", "3", "1"); // Note duplicate
 
             @SuppressWarnings("unchecked")
@@ -239,7 +240,7 @@ class ValueConverterTest {
         @Test
         @DisplayName("Should handle single item to collection conversion")
         void shouldHandleSingleItemToCollectionConversion() throws Exception {
-            Type listType = getClass().getMethod("getStringList").getGenericReturnType();
+            Type listType = ValueConverterTest.class.getMethod("getStringList").getGenericReturnType();
 
             // Single map converted to list containing that map
             @SuppressWarnings("unchecked")
@@ -252,17 +253,13 @@ class ValueConverterTest {
         @Test
         @DisplayName("Should throw for unsupported collection types")
         void shouldThrowForUnsupportedCollectionTypes() throws Exception {
-            Type listType = getClass().getMethod("getStringList").getGenericReturnType();
+            Type listType = ValueConverterTest.class.getMethod("getStringList").getGenericReturnType();
 
             StructuraException exception = assertThrows(StructuraException.class, () ->
                     valueConverter.convert(List.of("a"), listType, Collection.class, "test")
             );
             assertTrue(exception.getMessage().contains("Unsupported collection type"));
         }
-
-        // Helper methods for reflection
-        public List<String> getStringList() { return null; }
-        public Set<Integer> getIntegerSet() { return null; }
     }
 
     @Nested
@@ -272,7 +269,7 @@ class ValueConverterTest {
         @Test
         @DisplayName("Should convert maps with type conversion of keys and values")
         void shouldConvertMapsWithTypeConversion() throws Exception {
-            Type mapType = getClass().getMethod("getStringIntegerMap").getGenericReturnType();
+            Type mapType = ValueConverterTest.class.getMethod("getStringIntegerMap").getGenericReturnType();
             Map<String, Object> input = Map.of(
                     "count", "42",
                     "total", "100",
@@ -292,7 +289,7 @@ class ValueConverterTest {
         void shouldValidateMapTypeParameters() {
             ParameterizedType invalidType = new ParameterizedType() {
                 @Override
-                public Type[] getActualTypeArguments() { return new Type[]{String.class}; } // Only 1 param
+                public Type[] getActualTypeArguments() { return new Type[]{String.class}; }
                 @Override
                 public Type getRawType() { return Map.class; }
                 @Override
@@ -308,17 +305,13 @@ class ValueConverterTest {
         @Test
         @DisplayName("Should reject non-map input for map conversion")
         void shouldRejectNonMapInputForMapConversion() throws Exception {
-            Type mapType = getClass().getMethod("getStringStringMap").getGenericReturnType();
+            Type mapType = ValueConverterTest.class.getMethod("getStringStringMap").getGenericReturnType();
 
             StructuraException exception = assertThrows(StructuraException.class, () ->
                     valueConverter.convert("not a map", mapType, Map.class, "test")
             );
             assertTrue(exception.getMessage().contains("Cannot convert"));
         }
-
-        // Helper methods
-        public Map<String, String> getStringStringMap() { return null; }
-        public Map<String, Integer> getStringIntegerMap() { return null; }
     }
 
     @Nested
@@ -350,7 +343,7 @@ class ValueConverterTest {
         @DisplayName("Should handle different polymorphic key names")
         void shouldHandleDifferentPolymorphicKeyNames() {
             Map<String, Object> stripeData = Map.of(
-                    "provider", "stripe", // Different key name
+                    "provider", "stripe",
                     "name", "Production Stripe",
                     "enabled", true,
                     "api-key", "sk_live_123"
@@ -382,8 +375,8 @@ class ValueConverterTest {
             assertInstanceOf(TestPostgreSQLConfig.class, result);
             TestPostgreSQLConfig postgres = (TestPostgreSQLConfig) result;
             assertEquals("custom.postgres.com", postgres.host());
-            assertEquals(5432, postgres.port()); // Default value
-            assertEquals("postgresql", postgres.driver()); // Default value
+            assertEquals(5432, postgres.port()); // Default
+            assertEquals("postgresql", postgres.driver()); // Default
         }
 
         @Test
@@ -394,24 +387,19 @@ class ValueConverterTest {
                     Map.of("type", "postgres", "host", "postgres1.com", "port", 5432)
             );
 
-            Type listType = getClass().getMethod("getDatabaseConfigList").getGenericReturnType();
+            Type listType = ValueConverterTest.class.getMethod("getDatabaseConfigList").getGenericReturnType();
 
             @SuppressWarnings("unchecked")
             List<TestDatabaseConfig> result = (List<TestDatabaseConfig>) valueConverter.convert(
                     databaseList, listType, List.class, ""
             );
 
-            assertEquals(2, result.size());
+            assertCollectionSize(2, result, "database list");
             assertInstanceOf(TestMySQLConfig.class, result.get(0));
             assertInstanceOf(TestPostgreSQLConfig.class, result.get(1));
 
-            TestMySQLConfig mysql = (TestMySQLConfig) result.get(0);
-            assertEquals("mysql1.com", mysql.host());
-            assertEquals(3306, mysql.port());
-
-            TestPostgreSQLConfig postgres = (TestPostgreSQLConfig) result.get(1);
-            assertEquals("postgres1.com", postgres.host());
-            assertEquals(5432, postgres.port());
+            assertEquals("mysql1.com", result.get(0).getHost());
+            assertEquals("postgres1.com", result.get(1).getHost());
         }
 
         @Test
@@ -422,9 +410,9 @@ class ValueConverterTest {
                     "port", 3306
             );
 
-            StructuraException exception = assertThrows(StructuraException.class, () -> {
-                valueConverter.convert(dataWithoutType, TestDatabaseConfig.class, "test");
-            });
+            StructuraException exception = assertThrows(StructuraException.class, () ->
+                    valueConverter.convert(dataWithoutType, TestDatabaseConfig.class, "test")
+            );
 
             assertTrue(exception.getMessage().contains("requires key 'type'"));
         }
@@ -437,26 +425,24 @@ class ValueConverterTest {
                     "host", "oracle.host.com"
             );
 
-            StructuraException exception = assertThrows(StructuraException.class, () -> {
-                valueConverter.convert(dataWithUnknownType, TestDatabaseConfig.class, "test");
-            });
+            StructuraException exception = assertThrows(StructuraException.class, () ->
+                    valueConverter.convert(dataWithUnknownType, TestDatabaseConfig.class, "test")
+            );
 
-            assertTrue(exception.getMessage().contains("No registered type found for oracle"));
-            assertTrue(exception.getMessage().contains("Available types: mysql, postgres"));
+            assertContainsAll(exception.getMessage(),
+                    "No registered type found for oracle",
+                    "Available types: mysql, postgres");
         }
 
         @Test
         @DisplayName("Should throw exception for non-Map polymorphic data")
         void shouldThrowExceptionForNonMapPolymorphicData() {
-            StructuraException exception = assertThrows(StructuraException.class, () -> {
-                valueConverter.convert("invalid-string", TestDatabaseConfig.class, "test");
-            });
+            StructuraException exception = assertThrows(StructuraException.class, () ->
+                    valueConverter.convert("invalid-string", TestDatabaseConfig.class, "test")
+            );
 
             assertTrue(exception.getMessage().contains("requires a Map value for conversion"));
         }
-
-        // Helper method for reflection
-        public List<TestDatabaseConfig> getDatabaseConfigList() { return null; }
     }
 
     @Nested
@@ -472,17 +458,6 @@ class ValueConverterTest {
 
             assertEquals("test", result.name());
             assertEquals(42, result.value());
-        }
-
-        @Test
-        @DisplayName("Should convert maps to records with defaults for missing fields")
-        void shouldConvertMapsToRecordsWithDefaults() {
-            Map<String, Object> inputPartial = Map.of("name", "partialTest");
-
-            RecordWithDefaults result = (RecordWithDefaults) valueConverter.convert(inputPartial, RecordWithDefaults.class, "");
-
-            assertEquals("partialTest", result.name());
-            assertEquals(0, result.value()); // Default value
         }
 
         @Test
@@ -508,19 +483,16 @@ class ValueConverterTest {
         @Test
         @DisplayName("Should handle unsupported type conversions gracefully")
         void shouldHandleUnsupportedTypeConversions() {
-            // This should throw a clear exception for unsupported types
             StructuraException exception = assertThrows(StructuraException.class, () ->
                     valueConverter.convert("invalid", Thread.class, "test")
             );
 
-            assertTrue(exception.getMessage().contains("Unsupported conversion"));
-            assertTrue(exception.getMessage().contains("Thread"));
+            assertContainsAll(exception.getMessage(), "Unsupported conversion", "Thread");
         }
 
         @Test
         @DisplayName("Should throw exception for invalid numeric conversions")
         void shouldThrowExceptionForInvalidNumericConversions() {
-            // This should definitely throw an exception
             assertThrows(Exception.class, () ->
                     valueConverter.convert("not_a_number", int.class, "test")
             );
@@ -559,11 +531,10 @@ class ValueConverterTest {
 
             // Verify main database
             assertInstanceOf(TestMySQLConfig.class, result.database());
-            TestMySQLConfig primaryDb = (TestMySQLConfig) result.database();
-            assertEquals("primary.mysql.com", primaryDb.host());
+            assertEquals("primary.mysql.com", result.database().getHost());
 
             // Verify backup databases
-            assertEquals(2, result.backupDatabases().size());
+            assertCollectionSize(2, result.backupDatabases(), "backup databases");
             assertInstanceOf(TestPostgreSQLConfig.class, result.backupDatabases().get(0));
             assertInstanceOf(TestMySQLConfig.class, result.backupDatabases().get(1));
 

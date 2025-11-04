@@ -70,6 +70,22 @@ public class CustomReaderRegistry {
     }
 
     /**
+     * Validates that an object is not null and throws a descriptive exception if it is.
+     *
+     * @param obj the object to validate
+     * @param paramName the name of the parameter (for error message)
+     * @param operation the operation being performed (for error message)
+     * @throws StructuraException if the object is null
+     */
+    private void validateNonNull(Object obj, String paramName, String operation) {
+        if (obj == null) {
+            throw new StructuraException(
+                String.format("Cannot %s for null %s", operation, paramName)
+            );
+        }
+    }
+
+    /**
      * Gets the singleton instance of CustomReaderRegistry.
      *
      * @return the singleton instance
@@ -90,12 +106,11 @@ public class CustomReaderRegistry {
      * @throws StructuraException if targetClass or reader is null, or if a reader is already registered
      */
     public <T> void register(Class<T> targetClass, Reader<T> reader) {
-        if (targetClass == null) {
-            throw new StructuraException("Cannot register reader for null class");
-        }
+        validateNonNull(targetClass, "class", "register reader");
         if (reader == null) {
             throw new StructuraException("Cannot register null reader for class " + targetClass.getName());
         }
+
         // Convert Class to TypeToken for unified internal handling
         TypeToken<T> token = TypeToken.of(targetClass);
         if (readers.containsKey(token)) {
@@ -125,12 +140,11 @@ public class CustomReaderRegistry {
      * @throws StructuraException if typeToken or reader is null, or if a reader is already registered
      */
     public <T> void register(TypeToken<T> typeToken, Reader<T> reader) {
-        if (typeToken == null) {
-            throw new StructuraException("Cannot register reader for null TypeToken");
-        }
+        validateNonNull(typeToken, "TypeToken", "register reader");
         if (reader == null) {
             throw new StructuraException("Cannot register null reader for type " + typeToken.getType());
         }
+
         if (readers.containsKey(typeToken)) {
             throw new StructuraException("A reader is already registered for type " + typeToken.getType());
         }
@@ -145,9 +159,7 @@ public class CustomReaderRegistry {
      * @throws StructuraException if targetClass is null
      */
     public boolean unregister(Class<?> targetClass) {
-        if (targetClass == null) {
-            throw new StructuraException("Cannot unregister reader for null class");
-        }
+        validateNonNull(targetClass, "class", "unregister reader");
         return readers.remove(TypeToken.of(targetClass)) != null;
     }
 
@@ -159,9 +171,7 @@ public class CustomReaderRegistry {
      * @throws StructuraException if typeToken is null
      */
     public boolean unregister(TypeToken<?> typeToken) {
-        if (typeToken == null) {
-            throw new StructuraException("Cannot unregister reader for null TypeToken");
-        }
+        validateNonNull(typeToken, "TypeToken", "unregister reader");
         return readers.remove(typeToken) != null;
     }
 

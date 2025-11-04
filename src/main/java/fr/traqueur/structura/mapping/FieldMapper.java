@@ -4,10 +4,14 @@ import fr.traqueur.structura.annotations.Options;
 import fr.traqueur.structura.exceptions.StructuraException;
 import fr.traqueur.structura.registries.DefaultValueRegistry;
 
+import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Field;
 import java.lang.reflect.Parameter;
 import java.lang.reflect.RecordComponent;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * FieldMapper handles field name mapping and key logic.
@@ -15,9 +19,13 @@ import java.util.*;
  */
 public class FieldMapper {
 
-    private static final String CAMEL_CASE_REGEX = "([a-z])([A-Z])";
-    private static final String SNAKE_CASE_REGEX = "([A-Za-z0-9])_([A-Za-z0-9])";
+    // Pre-compiled patterns for better performance
+    private static final Pattern CAMEL_CASE_PATTERN = Pattern.compile("([a-z])([A-Z])");
+    private static final Pattern SNAKE_CASE_PATTERN = Pattern.compile("([A-Za-z0-9])_([A-Za-z0-9])");
     private static final String KEBAB_CASE_REPLACEMENT = "$1-$2";
+
+    // Cache for conversion results (thread-safe)
+    private static final Map<String, String> CONVERSION_CACHE = new ConcurrentHashMap<>();
 
     /**
      * Constructor for FieldMapper.
@@ -33,13 +41,7 @@ public class FieldMapper {
      * @return the effective name to use for YAML mapping
      */
     public String getEffectiveFieldName(Parameter parameter, String defaultName) {
-        if (parameter.isAnnotationPresent(Options.class)) {
-            Options options = parameter.getAnnotation(Options.class);
-            if (!options.name().trim().isEmpty()) {
-                return options.name();
-            }
-        }
-        return convertCamelCaseToKebabCase(defaultName);
+        return getEffectiveName(parameter, defaultName);
     }
 
     /**
@@ -50,35 +52,70 @@ public class FieldMapper {
      * @return the effective name for YAML mapping
      */
     public String getFieldNameFromField(Field field) {
-        if (field.isAnnotationPresent(Options.class)) {
-            Options options = field.getAnnotation(Options.class);
-            if (!options.name().trim().isEmpty()) {
-                return options.name();
+        return getEffectiveName(field, field.getName());
+    }
+
+    /**
+     * Extracts the custom name from the @Options annotation if present.
+     *
+     * @param element the annotated element (Parameter or Field)
+     * @return the custom name or null if not specified
+     */
+    private <T extends AnnotatedElement> String extractCustomName(T element) {
+        if (element.isAnnotationPresent(Options.class)) {
+            Options options = element.getAnnotation(Options.class);
+            String customName = options.name().trim();
+            if (!customName.isEmpty()) {
+                return customName;
             }
         }
-        return convertCamelCaseToKebabCase(field.getName());
+        return null;
+    }
+
+    /**
+     * Gets the effective name for an annotated element, considering @Options annotation.
+     *
+     * @param element the annotated element (Parameter or Field)
+     * @param defaultName the default name to use if no custom name is specified
+     * @return the effective name (custom or converted to kebab-case)
+     */
+    private String getEffectiveName(AnnotatedElement element, String defaultName) {
+        String customName = extractCustomName(element);
+        return customName != null ? customName : convertCamelCaseToKebabCase(defaultName);
     }
 
     /**
      * Converts a snake_case name to kebab-case.
      * Example: MYSQL_DATABASE -> mysql-database
      *
+     * <p>This method uses a cache to avoid redundant conversions.</p>
+     *
      * @param snakeCase the snake_case string
      * @return the kebab-case string
      */
     public String convertSnakeCaseToKebabCase(String snakeCase) {
-        return snakeCase.replaceAll(SNAKE_CASE_REGEX, KEBAB_CASE_REPLACEMENT).toLowerCase();
+        return CONVERSION_CACHE.computeIfAbsent("snake:" + snakeCase, key -> {
+            String actual = key.substring(6); // Remove "snake:" prefix
+            Matcher matcher = SNAKE_CASE_PATTERN.matcher(actual);
+            return matcher.replaceAll(KEBAB_CASE_REPLACEMENT).toLowerCase();
+        });
     }
 
     /**
      * Converts a camelCase name to kebab-case.
      * Example: databaseUrl -> database-url
      *
+     * <p>This method uses a cache to avoid redundant conversions.</p>
+     *
      * @param camelCase the camelCase string
      * @return the kebab-case string
      */
     public String convertCamelCaseToKebabCase(String camelCase) {
-        return camelCase.replaceAll(CAMEL_CASE_REGEX, KEBAB_CASE_REPLACEMENT).toLowerCase();
+        return CONVERSION_CACHE.computeIfAbsent("camel:" + camelCase, key -> {
+            String actual = key.substring(6); // Remove "camel:" prefix
+            Matcher matcher = CAMEL_CASE_PATTERN.matcher(actual);
+            return matcher.replaceAll(KEBAB_CASE_REPLACEMENT).toLowerCase();
+        });
     }
 
     /**

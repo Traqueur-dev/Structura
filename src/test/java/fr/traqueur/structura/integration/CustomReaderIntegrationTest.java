@@ -337,6 +337,64 @@ class CustomReaderIntegrationTest {
     }
 
     @Nested
+    @DisplayName("Generic Types with Custom Readers")
+    class GenericTypesTest {
+
+        // Mock generic type similar to Tag<Material>
+        interface Container<T> {
+            T getValue();
+        }
+
+        static class StringContainer implements Container<String> {
+            private final String value;
+
+            StringContainer(String value) {
+                this.value = value;
+            }
+
+            @Override
+            public String getValue() {
+                return value;
+            }
+
+            @Override
+            public String toString() {
+                return "StringContainer{value='" + value + "'}";
+            }
+        }
+
+        public record GenericCollectionConfig(
+                List<Container<String>> containers
+        ) implements Loadable {}
+
+        @Test
+        @DisplayName("Should convert List of generic types with custom reader")
+        void shouldConvertListOfGenericTypesWithCustomReader() {
+            // Register custom reader for Container<String> using TypeToken
+            CustomReaderRegistry.getInstance().register(
+                    new fr.traqueur.structura.types.TypeToken<Container<String>>() {},
+                    str -> new StringContainer("parsed:" + str)
+            );
+
+            String yaml = """
+                    containers:
+                      - "item1"
+                      - "item2"
+                      - "item3"
+                    """;
+
+            GenericCollectionConfig config = Structura.parse(yaml, GenericCollectionConfig.class);
+
+            assertNotNull(config.containers());
+            assertEquals(3, config.containers().size());
+
+            assertEquals("parsed:item1", config.containers().get(0).getValue());
+            assertEquals("parsed:item2", config.containers().get(1).getValue());
+            assertEquals("parsed:item3", config.containers().get(2).getValue());
+        }
+    }
+
+    @Nested
     @DisplayName("End-to-End Workflows")
     class EndToEndWorkflowsTest {
 
