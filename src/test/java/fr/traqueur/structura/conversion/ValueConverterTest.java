@@ -1,12 +1,6 @@
 package fr.traqueur.structura.conversion;
 
-import fr.traqueur.structura.annotations.Polymorphic;
-import fr.traqueur.structura.annotations.defaults.DefaultBool;
-import fr.traqueur.structura.annotations.defaults.DefaultInt;
-import fr.traqueur.structura.annotations.defaults.DefaultString;
-import fr.traqueur.structura.api.Loadable;
 import fr.traqueur.structura.exceptions.StructuraException;
-import fr.traqueur.structura.registries.PolymorphicRegistry;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -15,10 +9,14 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
-import java.util.*;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import static fr.traqueur.structura.fixtures.TestModels.*;
 import static fr.traqueur.structura.helpers.TestHelpers.*;
+import static fr.traqueur.structura.helpers.PolymorphicTestHelper.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -30,66 +28,6 @@ class ValueConverterTest {
 
     private ValueConverter valueConverter;
 
-    // ==================== Test-Specific Polymorphic Models ====================
-    // These models are specific to ValueConverter tests and include the 'driver' field
-
-    @Polymorphic(key = "type")
-    public interface TestDatabaseConfig extends Loadable {
-        String getHost();
-        int getPort();
-    }
-
-    @Polymorphic(key = "provider")
-    public interface TestPaymentProvider extends Loadable {
-        String getName();
-        boolean isEnabled();
-    }
-
-    public record TestMySQLConfig(
-            @DefaultString("localhost") String host,
-            @DefaultInt(3306) int port,
-            @DefaultString("mysql") String driver
-    ) implements TestDatabaseConfig {
-        @Override public String getHost() { return host; }
-        @Override public int getPort() { return port; }
-    }
-
-    public record TestPostgreSQLConfig(
-            @DefaultString("localhost") String host,
-            @DefaultInt(5432) int port,
-            @DefaultString("postgresql") String driver
-    ) implements TestDatabaseConfig {
-        @Override public String getHost() { return host; }
-        @Override public int getPort() { return port; }
-    }
-
-    public record TestStripeProvider(
-            @DefaultString("Stripe") String name,
-            @DefaultBool(true) boolean enabled,
-            @DefaultString("sk_test_") String apiKey
-    ) implements TestPaymentProvider {
-        @Override public String getName() { return name; }
-        @Override public boolean isEnabled() { return enabled; }
-    }
-
-    public record TestPayPalProvider(
-            @DefaultString("PayPal") String name,
-            @DefaultBool(false) boolean enabled,
-            @DefaultString("client_id_") String clientId
-    ) implements TestPaymentProvider {
-        @Override public String getName() { return name; }
-        @Override public boolean isEnabled() { return enabled; }
-    }
-
-    public record TestConfigWithPolymorphic(
-            String appName,
-            TestDatabaseConfig database,
-            List<TestDatabaseConfig> backupDatabases,
-            TestPaymentProvider paymentProvider
-    ) implements Loadable {}
-
-    // ==================== Test Setup ====================
-
     @BeforeAll
     static void setUpRegistries() {
         clearAllRegistries();
@@ -99,30 +37,16 @@ class ValueConverterTest {
     void setUp() {
         clearAllRegistries();
         valueConverter = createValueConverter();
-        setupPolymorphicRegistries();
+        setupTestDatabaseConfigRegistry();
+        setupTestPaymentProviderRegistry();
     }
 
-    private void setupPolymorphicRegistries() {
-        PolymorphicRegistry.create(TestDatabaseConfig.class, registry -> {
-            registry.register("mysql", TestMySQLConfig.class);
-            registry.register("postgres", TestPostgreSQLConfig.class);
-        });
-
-        PolymorphicRegistry.create(TestPaymentProvider.class, registry -> {
-            registry.register("stripe", TestStripeProvider.class);
-            registry.register("paypal", TestPayPalProvider.class);
-        });
-    }
-
-    // ==================== Helper Methods for Reflection ====================
-
+    // Helper methods for reflection-based generic type testing
     public List<String> getStringList() { return null; }
     public Set<Integer> getIntegerSet() { return null; }
     public Map<String, String> getStringStringMap() { return null; }
     public Map<String, Integer> getStringIntegerMap() { return null; }
     public List<TestDatabaseConfig> getDatabaseConfigList() { return null; }
-
-    // ==================== Tests ====================
 
     @Nested
     @DisplayName("Complex Type Conversions")

@@ -91,22 +91,7 @@ class IntegrationTest {
         @Test
         @DisplayName("Should load enum configuration from File object")
         void shouldLoadEnumConfigurationFromFile() throws IOException {
-            String enumYaml = """
-                debug:
-                  description: "File debug"
-                  priority: 10
-                info:
-                  description: "File info"
-                  priority: 20
-                warn:
-                  description: "File warn"
-                  priority: 30
-                error:
-                  description: "File error"
-                  priority: 40
-                """;
-
-            File enumFile = createTempYamlFileAsFile(enumYaml);
+            File enumFile = createTempYamlFileAsFile(LOADABLE_ENUM_FILE_VARIANT);
 
             try {
                 Structura.loadEnum(enumFile, LoadableLogLevel.class);

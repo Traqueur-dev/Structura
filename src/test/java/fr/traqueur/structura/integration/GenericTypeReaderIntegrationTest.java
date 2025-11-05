@@ -1,7 +1,5 @@
 package fr.traqueur.structura.integration;
 
-import fr.traqueur.structura.api.Loadable;
-import fr.traqueur.structura.api.Structura;
 import fr.traqueur.structura.registries.CustomReaderRegistry;
 import fr.traqueur.structura.types.TypeToken;
 import org.junit.jupiter.api.*;
@@ -10,27 +8,11 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 
+import static fr.traqueur.structura.fixtures.TestModels.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("Generic Type Reader Integration Tests")
 class GenericTypeReaderIntegrationTest {
-
-    // Test data classes
-    record Box<T>(T value) {
-        @Override
-        public String toString() {
-            return "Box(" + value + ")";
-        }
-    }
-
-    record StringBox(String value) {}
-    record IntBox(int value) {}
-
-    // Test records
-    public record ConfigWithBoxedString(Box<String> data) implements Loadable {}
-    public record ConfigWithBoxedInt(Box<Integer> data) implements Loadable {}
-    public record ConfigWithOptional(Optional<String> value) implements Loadable {}
-    public record ConfigWithList(List<String> items) implements Loadable {}
 
     @BeforeEach
     void setUp() {

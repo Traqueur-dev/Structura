@@ -31,20 +31,6 @@ public final class TestFixtures {
         server-port: 9000
         """;
 
-    public static final String SERVER_CONFIG = """
-        host: "localhost"
-        port: 8080
-        ssl: true
-        """;
-
-    public static final String DATABASE_CONFIG = """
-        host: "db.example.com"
-        port: 5432
-        database: "mydb"
-        username: "admin"
-        password: "secret123"
-        """;
-
     // ==================== Nested Configurations ====================
 
     public static final String NESTED_CONFIG = """
@@ -201,13 +187,6 @@ public final class TestFixtures {
             bic: "COBADEFFXXX"
         """;
 
-    public static final String KEY_AS_DISCRIMINATOR_SIMPLE = """
-        database:
-          my-sql:
-            host: "mysql.local"
-            port: 3306
-        """;
-
     public static final String KEY_AS_DISCRIMINATOR_LIST = """
         databases:
           my-sql:
@@ -231,22 +210,6 @@ public final class TestFixtures {
     public static final String ENUM_CONFIG = """
         log-level: INFO
         environment: PRODUCTION
-        """;
-
-    public static final String ENUM_LIST_CONFIG = """
-        supported-databases:
-          - MYSQL
-          - POSTGRESQL
-          - MONGO_DB_SOURCE
-        """;
-
-    public static final String ENUM_DATA_MYSQL = """
-        mysql:
-          driver: "com.mysql.cj.jdbc.Driver"
-          default-port: 3306
-          properties:
-            ssl: "true"
-            timeout: "30"
         """;
 
     public static final String ENUM_DATA_FULL = """
@@ -289,11 +252,22 @@ public final class TestFixtures {
           priority: 99
         """;
 
-    // ==================== Edge Cases ====================
+    public static final String LOADABLE_ENUM_FILE_VARIANT = """
+        debug:
+          description: "File debug"
+          priority: 10
+        info:
+          description: "File info"
+          priority: 20
+        warn:
+          description: "File warn"
+          priority: 30
+        error:
+          description: "File error"
+          priority: 40
+        """;
 
-    public static final String NULL_YAML = null;
-    public static final String EMPTY_STRING = "";
-    public static final String WHITESPACE_ONLY = "   \n  \t  ";
+    // ==================== Edge Cases ====================
 
     public static final String INVALID_YAML = """
         this is not: valid: yaml: syntax
@@ -323,45 +297,5 @@ public final class TestFixtures {
             port: %d
             enabled: %b
             """, name, port, enabled);
-    }
-
-    /**
-     * Creates a server configuration with custom values.
-     */
-    public static String createServerConfig(String host, int port, boolean ssl) {
-        return String.format("""
-            host: "%s"
-            port: %d
-            ssl: %b
-            """, host, port, ssl);
-    }
-
-    /**
-     * Creates a database configuration with custom values.
-     */
-    public static String createDatabaseConfig(String host, int port, String database, String username) {
-        return String.format("""
-            host: "%s"
-            port: %d
-            database: "%s"
-            username: "%s"
-            """, host, port, database, username);
-    }
-
-    /**
-     * Creates a polymorphic configuration with a specific type.
-     */
-    public static String createPolymorphicConfig(String type, Map<String, Object> fields) {
-        StringBuilder yaml = new StringBuilder("method:\n  type: \"" + type + "\"\n");
-        fields.forEach((key, value) -> {
-            yaml.append("  ").append(key).append(": ");
-            if (value instanceof String) {
-                yaml.append("\"").append(value).append("\"");
-            } else {
-                yaml.append(value);
-            }
-            yaml.append("\n");
-        });
-        return yaml.toString();
     }
 }

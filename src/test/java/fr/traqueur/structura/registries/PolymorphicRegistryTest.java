@@ -1,9 +1,5 @@
 package fr.traqueur.structura.registries;
 
-import fr.traqueur.structura.annotations.Polymorphic;
-import fr.traqueur.structura.annotations.defaults.DefaultInt;
-import fr.traqueur.structura.annotations.defaults.DefaultString;
-import fr.traqueur.structura.api.Loadable;
 import fr.traqueur.structura.exceptions.StructuraException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -14,7 +10,9 @@ import org.junit.jupiter.params.provider.NullAndEmptySource;
 
 import java.util.Optional;
 
+import static fr.traqueur.structura.fixtures.TestModels.*;
 import static fr.traqueur.structura.helpers.TestHelpers.*;
+import static fr.traqueur.structura.helpers.PolymorphicTestHelper.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -23,40 +21,6 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 @DisplayName("PolymorphicRegistry - Refactored Tests")
 class PolymorphicRegistryTest {
-
-    // Test interfaces and implementations
-    @Polymorphic(key = "type")
-    public interface TestDatabaseConfig extends Loadable {
-        String getHost();
-        int getPort();
-    }
-
-    @Polymorphic(key = "provider")
-    public interface TestPaymentProvider extends Loadable {
-        String getName();
-    }
-
-    public record TestMySQLConfig(
-            @DefaultString("localhost") String host,
-            @DefaultInt(3306) int port
-    ) implements TestDatabaseConfig {
-        @Override public String getHost() { return host; }
-        @Override public int getPort() { return port; }
-    }
-
-    public record TestPostgreSQLConfig(
-            @DefaultString("localhost") String host,
-            @DefaultInt(5432) int port
-    ) implements TestDatabaseConfig {
-        @Override public String getHost() { return host; }
-        @Override public int getPort() { return port; }
-    }
-
-    public record TestStripeProvider(
-            @DefaultString("Stripe") String name
-    ) implements TestPaymentProvider {
-        @Override public String getName() { return name; }
-    }
 
     @BeforeEach
     void setUp() {

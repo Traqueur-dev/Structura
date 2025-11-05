@@ -60,6 +60,92 @@ public final class PolymorphicTestHelper {
     }
 
     /**
+     * Sets up the TestDatabaseConfig polymorphic registry for ValueConverter tests.
+     */
+    public static void setupTestDatabaseConfigRegistry() {
+        try {
+            PolymorphicRegistry.get(TestDatabaseConfig.class);
+        } catch (Exception e) {
+            PolymorphicRegistry.create(TestDatabaseConfig.class, registry -> {
+                registry.register("mysql", TestMySQLConfig.class);
+                registry.register("postgres", TestPostgreSQLConfig.class);
+            });
+        }
+    }
+
+    /**
+     * Sets up the TestPaymentProvider polymorphic registry for ValueConverter tests.
+     */
+    public static void setupTestPaymentProviderRegistry() {
+        try {
+            PolymorphicRegistry.get(TestPaymentProvider.class);
+        } catch (Exception e) {
+            PolymorphicRegistry.create(TestPaymentProvider.class, registry -> {
+                registry.register("stripe", TestStripeProvider.class);
+                registry.register("paypal", TestPayPalProvider.class);
+            });
+        }
+    }
+
+    /**
+     * Sets up the InlineDatabaseConfig polymorphic registry.
+     */
+    public static void setupInlineDatabaseConfigRegistry() {
+        try {
+            PolymorphicRegistry.get(InlineDatabaseConfig.class);
+        } catch (Exception e) {
+            PolymorphicRegistry.create(InlineDatabaseConfig.class, registry -> {
+                registry.register("mysql", InlineMySQLConfig.class);
+                registry.register("postgres", InlinePostgreSQLConfig.class);
+            });
+        }
+    }
+
+    /**
+     * Sets up the CacheConfig polymorphic registry.
+     */
+    public static void setupCacheConfigRegistry() {
+        try {
+            PolymorphicRegistry.get(CacheConfig.class);
+        } catch (Exception e) {
+            PolymorphicRegistry.create(CacheConfig.class, registry -> {
+                registry.register("redis", RedisConfig.class);
+                registry.register("memcached", MemcachedConfig.class);
+            });
+        }
+    }
+
+    /**
+     * Sets up the StorageConfig polymorphic registry.
+     */
+    public static void setupStorageConfigRegistry() {
+        try {
+            PolymorphicRegistry.get(StorageConfig.class);
+        } catch (Exception e) {
+            PolymorphicRegistry.create(StorageConfig.class, registry -> {
+                registry.register("s3", S3Config.class);
+                registry.register("gcs", GCSConfig.class);
+            });
+        }
+    }
+
+    /**
+     * Sets up the ItemMetadata polymorphic registry.
+     */
+    public static void setupItemMetadataRegistry() {
+        try {
+            PolymorphicRegistry.get(ItemMetadata.class);
+        } catch (Exception e) {
+            PolymorphicRegistry.create(ItemMetadata.class, registry -> {
+                registry.register("food", FoodMetadata.class);
+                registry.register("potion", PotionMetadata.class);
+                registry.register("trim", TrimMetadata.class);
+                registry.register("leather-armor", LeatherArmorMetadata.class);
+            });
+        }
+    }
+
+    /**
      * Sets up all common polymorphic registries used in tests.
      * Call this in a test class with @BeforeAll to set up everything at once.
      */
@@ -67,6 +153,12 @@ public final class PolymorphicTestHelper {
         setupPaymentMethodRegistry();
         setupInlinePaymentMethodRegistry();
         setupKeyAsDiscriminatorDBRegistry();
+        setupTestDatabaseConfigRegistry();
+        setupTestPaymentProviderRegistry();
+        setupInlineDatabaseConfigRegistry();
+        setupCacheConfigRegistry();
+        setupStorageConfigRegistry();
+        setupItemMetadataRegistry();
     }
 
     /**

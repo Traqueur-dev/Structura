@@ -12,7 +12,7 @@ import java.util.Set;
 
 /**
  * Common test models used across multiple test classes.
- * This centralized location eliminates duplication and makes tests more maintainable.
+ * This centralized location removes duplication and makes tests more maintainable.
  */
 public final class TestModels {
 
@@ -441,15 +441,9 @@ public final class TestModels {
         Environment environment
     ) implements Loadable {}
 
-    public record EnumListConfig(
-        List<DatabaseType> supportedDatabases
-    ) implements Loadable {}
-
     // ==================== Edge Cases ====================
 
     public record EmptyConfig() implements Loadable {}
-
-    public record SingleFieldConfig(String value) implements Loadable {}
 
     public record AllTypesConfig(
         String stringField,
@@ -557,4 +551,159 @@ public final class TestModels {
     public record FoodMetadataInline(int nutrition, double saturation) implements ItemMetadataInline {}
 
     public record SimpleFieldConfigInline(ItemMetadataInline trim) implements Loadable {}
+
+    // ==================== ValueConverter Test Models ====================
+
+    @Polymorphic(key = "type")
+    public interface TestDatabaseConfig extends Loadable {
+        String getHost();
+        int getPort();
+    }
+
+    @Polymorphic(key = "provider")
+    public interface TestPaymentProvider extends Loadable {
+        String getName();
+        boolean isEnabled();
+    }
+
+    public record TestMySQLConfig(
+            @DefaultString("localhost") String host,
+            @DefaultInt(3306) int port,
+            @DefaultString("mysql") String driver
+    ) implements TestDatabaseConfig {
+        @Override public String getHost() { return host; }
+        @Override public int getPort() { return port; }
+    }
+
+    public record TestPostgreSQLConfig(
+            @DefaultString("localhost") String host,
+            @DefaultInt(5432) int port,
+            @DefaultString("postgresql") String driver
+    ) implements TestDatabaseConfig {
+        @Override public String getHost() { return host; }
+        @Override public int getPort() { return port; }
+    }
+
+    public record TestStripeProvider(
+            @DefaultString("Stripe") String name,
+            @DefaultBool(true) boolean enabled,
+            @DefaultString("sk_test_") String apiKey
+    ) implements TestPaymentProvider {
+        @Override public String getName() { return name; }
+        @Override public boolean isEnabled() { return enabled; }
+    }
+
+    public record TestPayPalProvider(
+            @DefaultString("PayPal") String name,
+            @DefaultBool(false) boolean enabled,
+            @DefaultString("client_id_") String clientId
+    ) implements TestPaymentProvider {
+        @Override public String getName() { return name; }
+        @Override public boolean isEnabled() { return enabled; }
+    }
+
+    public record TestConfigWithPolymorphic(
+            String appName,
+            TestDatabaseConfig database,
+            List<TestDatabaseConfig> backupDatabases,
+            TestPaymentProvider paymentProvider
+    ) implements Loadable {}
+
+    // ==================== CustomReaderIntegration Test Models ====================
+
+    // Mock Adventure API classes
+    public interface Component {
+        String asPlainText();
+    }
+
+    public static class TextComponent implements Component {
+        private final String text;
+        private final String color;
+
+        public TextComponent(String text, String color) {
+            this.text = text;
+            this.color = color;
+        }
+
+        @Override
+        public String asPlainText() {
+            return text;
+        }
+
+        public String getColor() {
+            return color;
+        }
+
+        @Override
+        public String toString() {
+            return "TextComponent{text='" + text + "', color='" + color + "'}";
+        }
+    }
+
+    public static class MiniMessage {
+        private static final MiniMessage INSTANCE = new MiniMessage();
+
+        public static MiniMessage miniMessage() {
+            return INSTANCE;
+        }
+
+        public Component deserialize(String input) {
+            if (input.contains("<green>")) {
+                String text = input.replace("<green>", "").replace("</green>", "");
+                return new TextComponent(text, "green");
+            } else if (input.contains("<red>")) {
+                String text = input.replace("<red>", "").replace("</red>", "");
+                return new TextComponent(text, "red");
+            } else if (input.contains("<blue>")) {
+                String text = input.replace("<blue>", "").replace("</blue>", "");
+                return new TextComponent(text, "blue");
+            } else {
+                return new TextComponent(input, "white");
+            }
+        }
+    }
+
+    public record MessageConfig(Component welcomeMessage, Component errorMessage) implements Loadable {}
+    public record ChatConfig(Component prefix, Component suffix, String playerName) implements Loadable {}
+    public record MessagesConfig(List<Component> announcements, Map<String, Component> customMessages) implements Loadable {}
+    public record CustomReaderSimpleConfig(String message) implements Loadable {}
+    public record ServerConfigWithComponents(String serverName, int maxPlayers, Component motd, Component shutdownMessage, List<Component> rules) implements Loadable {}
+    public record ChatFormat(Component prefix, Component suffix) implements Loadable {}
+    public record PlayerConfig(String playerName, ChatFormat chatFormat) implements Loadable {}
+
+    // ==================== GenericTypeReader Test Models ====================
+
+    public record Box<T>(T value) {
+        @Override
+        public String toString() {
+            return "Box(" + value + ")";
+        }
+    }
+
+    public record StringBox(String value) {}
+    public record IntBox(int value) {}
+
+    public interface Container<T> {
+        T value();
+    }
+
+    public record StringContainer(String value) implements Container<String> {
+        @Override
+        public String toString() {
+            return "StringContainer{value='" + value + "'}";
+        }
+    }
+
+    public record GenericCollectionConfig(List<Container<String>> containers) implements Loadable {}
+
+    // ==================== ConcreteTypeSection Test Models ====================
+
+    public record FoodItem(int nutrition, double saturation) implements Loadable {}
+    public record ServerConfigSimple(String host, int port) implements Loadable {}
+
+    public record ConfigWithFoodList(List<FoodItem> items) implements Loadable {}
+    public record ConfigWithServerList(List<ServerConfigSimple> servers) implements Loadable {}
+
+    public record ConfigWithFoodMap(Map<String, FoodItem> items) implements Loadable {}
+    public record ConfigWithServerMap(Map<String, ServerConfigSimple> servers) implements Loadable {}
 }
