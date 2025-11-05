@@ -1,9 +1,5 @@
 package fr.traqueur.structura.registries;
 
-import fr.traqueur.structura.annotations.Polymorphic;
-import fr.traqueur.structura.annotations.defaults.DefaultInt;
-import fr.traqueur.structura.annotations.defaults.DefaultString;
-import fr.traqueur.structura.api.Loadable;
 import fr.traqueur.structura.exceptions.StructuraException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -14,58 +10,21 @@ import org.junit.jupiter.params.provider.NullAndEmptySource;
 
 import java.util.Optional;
 
+import static fr.traqueur.structura.fixtures.TestModels.*;
+import static fr.traqueur.structura.helpers.TestHelpers.*;
+import static fr.traqueur.structura.helpers.PolymorphicTestHelper.*;
 import static org.junit.jupiter.api.Assertions.*;
 
-@DisplayName("PolymorphicRegistry - Essential Tests")
+/**
+ * Refactored PolymorphicRegistry tests using common helpers.
+ * Tests registry behavior, type safety, and error handling.
+ */
+@DisplayName("PolymorphicRegistry - Refactored Tests")
 class PolymorphicRegistryTest {
-
-    // Test interfaces and implementations
-    @Polymorphic(key = "type")
-    public interface TestDatabaseConfig extends Loadable {
-        String getHost();
-        int getPort();
-    }
-
-    @Polymorphic(key = "provider")
-    public interface TestPaymentProvider extends Loadable {
-        String getName();
-    }
-
-    public record TestMySQLConfig(
-            @DefaultString("localhost") String host,
-            @DefaultInt(3306) int port
-    ) implements TestDatabaseConfig {
-        @Override public String getHost() { return host; }
-        @Override public int getPort() { return port; }
-    }
-
-    public record TestPostgreSQLConfig(
-            @DefaultString("localhost") String host,
-            @DefaultInt(5432) int port
-    ) implements TestDatabaseConfig {
-        @Override public String getHost() { return host; }
-        @Override public int getPort() { return port; }
-    }
-
-    public record TestStripeProvider(
-            @DefaultString("Stripe") String name
-    ) implements TestPaymentProvider {
-        @Override public String getName() { return name; }
-    }
 
     @BeforeEach
     void setUp() {
         clearAllRegistries();
-    }
-
-    private void clearAllRegistries() {
-        try {
-            var field = PolymorphicRegistry.class.getDeclaredField("REGISTRIES");
-            field.setAccessible(true);
-            ((java.util.Map<?, ?>) field.get(null)).clear();
-        } catch (Exception e) {
-            fail("Failed to clear registries: " + e.getMessage());
-        }
     }
 
     @Nested
@@ -75,8 +34,8 @@ class PolymorphicRegistryTest {
         @Test
         @DisplayName("Should create and retrieve registry with implementations")
         void shouldCreateAndRetrieveRegistryWithImplementations() {
-            // Create registry
-            PolymorphicRegistry.create(TestDatabaseConfig.class, registry -> {
+            // Create registry using helper
+            createPolymorphicRegistry(TestDatabaseConfig.class, registry -> {
                 registry.register("mysql", TestMySQLConfig.class);
                 registry.register("postgres", TestPostgreSQLConfig.class);
                 registry.register(TestMySQLConfig.class); // Auto-naming test
@@ -89,13 +48,13 @@ class PolymorphicRegistryTest {
             assertTrue(registry.get("postgres").isPresent());
             assertTrue(registry.get("testmysqlconfig").isPresent()); // Auto-generated name
             assertEquals(TestMySQLConfig.class, registry.get("mysql").get());
-            assertEquals(3, registry.availableNames().size());
+            assertCollectionSize(3, registry.availableNames(), "available names");
         }
 
         @Test
         @DisplayName("Should handle case-insensitive retrieval")
         void shouldHandleCaseInsensitiveRetrieval() {
-            PolymorphicRegistry.create(TestDatabaseConfig.class, registry -> {
+            createPolymorphicRegistry(TestDatabaseConfig.class, registry -> {
                 registry.register("MySQL", TestMySQLConfig.class);
             });
 
@@ -109,12 +68,12 @@ class PolymorphicRegistryTest {
         @Test
         @DisplayName("Should maintain type safety across different registries")
         void shouldMaintainTypeSafetyAcrossDifferentRegistries() {
-            // Create separate registries
-            PolymorphicRegistry.create(TestDatabaseConfig.class, registry -> {
+            // Create separate registries using helpers
+            createPolymorphicRegistry(TestDatabaseConfig.class, registry -> {
                 registry.register("mysql", TestMySQLConfig.class);
             });
 
-            PolymorphicRegistry.create(TestPaymentProvider.class, registry -> {
+            createPolymorphicRegistry(TestPaymentProvider.class, registry -> {
                 registry.register("stripe", TestStripeProvider.class);
             });
 
@@ -136,50 +95,50 @@ class PolymorphicRegistryTest {
         @Test
         @DisplayName("Should throw exception for null class in create")
         void shouldThrowExceptionForNullClassInCreate() {
-            StructuraException exception = assertThrows(StructuraException.class, () -> {
-                PolymorphicRegistry.create(null, registry -> {});
-            });
+            StructuraException exception = assertThrows(StructuraException.class, () ->
+                    PolymorphicRegistry.create(null, registry -> {})
+            );
             assertEquals("Cannot create registry for null class.", exception.getMessage());
         }
 
         @Test
         @DisplayName("Should throw exception for null configurator")
         void shouldThrowExceptionForNullConfigurator() {
-            StructuraException exception = assertThrows(StructuraException.class, () -> {
-                PolymorphicRegistry.create(TestDatabaseConfig.class, null);
-            });
+            StructuraException exception = assertThrows(StructuraException.class, () ->
+                    PolymorphicRegistry.create(TestDatabaseConfig.class, null)
+            );
             assertEquals("Cannot create registry for null configurator.", exception.getMessage());
         }
 
         @Test
         @DisplayName("Should throw exception when registry already exists")
         void shouldThrowExceptionWhenRegistryAlreadyExists() {
-            PolymorphicRegistry.create(TestDatabaseConfig.class, registry -> {});
+            createPolymorphicRegistry(TestDatabaseConfig.class, registry -> {});
 
-            StructuraException exception = assertThrows(StructuraException.class, () -> {
-                PolymorphicRegistry.create(TestDatabaseConfig.class, registry -> {});
-            });
-            assertTrue(exception.getMessage().contains("Registry already exists for TestDatabaseConfig"));
+            StructuraException exception = assertThrows(StructuraException.class, () ->
+                    PolymorphicRegistry.create(TestDatabaseConfig.class, registry -> {})
+            );
+            assertContainsAll(exception.getMessage(), "Registry already exists for TestDatabaseConfig");
         }
 
         @Test
         @DisplayName("Should throw exception for non-existent registry")
         void shouldThrowExceptionForNonExistentRegistry() {
-            StructuraException exception = assertThrows(StructuraException.class, () -> {
-                PolymorphicRegistry.get(TestDatabaseConfig.class);
-            });
+            StructuraException exception = assertThrows(StructuraException.class, () ->
+                    PolymorphicRegistry.get(TestDatabaseConfig.class)
+            );
             assertEquals("No polymorphic registry registered for TestDatabaseConfig", exception.getMessage());
         }
 
         @Test
         @DisplayName("Should throw exception for duplicate implementation name")
         void shouldThrowExceptionForDuplicateImplementationName() {
-            PolymorphicRegistry.create(TestDatabaseConfig.class, registry -> {
+            createPolymorphicRegistry(TestDatabaseConfig.class, registry -> {
                 registry.register("mysql", TestMySQLConfig.class);
 
-                StructuraException exception = assertThrows(StructuraException.class, () -> {
-                    registry.register("mysql", TestPostgreSQLConfig.class);
-                });
+                StructuraException exception = assertThrows(StructuraException.class, () ->
+                        registry.register("mysql", TestPostgreSQLConfig.class)
+                );
                 assertEquals("A loader with the name 'mysql' is already registered.", exception.getMessage());
             });
         }
@@ -188,10 +147,10 @@ class PolymorphicRegistryTest {
         @NullAndEmptySource
         @DisplayName("Should throw exception for invalid implementation names")
         void shouldThrowExceptionForInvalidImplementationNames(String invalidName) {
-            PolymorphicRegistry.create(TestDatabaseConfig.class, registry -> {
-                StructuraException exception = assertThrows(StructuraException.class, () -> {
-                    registry.register(invalidName, TestMySQLConfig.class);
-                });
+            createPolymorphicRegistry(TestDatabaseConfig.class, registry -> {
+                StructuraException exception = assertThrows(StructuraException.class, () ->
+                        registry.register(invalidName, TestMySQLConfig.class)
+                );
                 assertEquals("Cannot register a class with a null or empty name.", exception.getMessage());
             });
         }
@@ -199,10 +158,10 @@ class PolymorphicRegistryTest {
         @Test
         @DisplayName("Should throw exception for null implementation")
         void shouldThrowExceptionForNullImplementation() {
-            PolymorphicRegistry.create(TestDatabaseConfig.class, registry -> {
-                StructuraException exception = assertThrows(StructuraException.class, () -> {
-                    registry.register("mysql", null);
-                });
+            createPolymorphicRegistry(TestDatabaseConfig.class, registry -> {
+                StructuraException exception = assertThrows(StructuraException.class, () ->
+                        registry.register("mysql", null)
+                );
                 assertEquals("Cannot register a null class for name 'mysql'.", exception.getMessage());
             });
         }
@@ -215,7 +174,7 @@ class PolymorphicRegistryTest {
         @Test
         @DisplayName("Should return empty optional for non-existent implementation")
         void shouldReturnEmptyOptionalForNonExistentImplementation() {
-            PolymorphicRegistry.create(TestDatabaseConfig.class, registry -> {
+            createPolymorphicRegistry(TestDatabaseConfig.class, registry -> {
                 registry.register("mysql", TestMySQLConfig.class);
             });
 
@@ -229,7 +188,7 @@ class PolymorphicRegistryTest {
         @NullAndEmptySource
         @DisplayName("Should return empty optional for invalid retrieval names")
         void shouldReturnEmptyOptionalForInvalidRetrievalNames(String invalidName) {
-            PolymorphicRegistry.create(TestDatabaseConfig.class, registry -> {
+            createPolymorphicRegistry(TestDatabaseConfig.class, registry -> {
                 registry.register("mysql", TestMySQLConfig.class);
             });
 
@@ -242,7 +201,7 @@ class PolymorphicRegistryTest {
         @Test
         @DisplayName("Should handle empty registry")
         void shouldHandleEmptyRegistry() {
-            PolymorphicRegistry.create(TestDatabaseConfig.class, registry -> {
+            createPolymorphicRegistry(TestDatabaseConfig.class, registry -> {
                 // No registrations
             });
 

@@ -57,18 +57,14 @@ public class Structura {
 
     /**
      * Builder class for creating a {@link StructuraProcessor} with custom configurations.
-     * This allows you to enable or disable validation during parsing.
+     *
+     * <p>Default settings:</p>
+     * <ul>
+     *   <li>Validation is enabled during parsing</li>
+     * </ul>
      */
     public static class StructuraBuilder {
         private boolean validateOnParse = true;
-
-        /**
-         * Constructs a new {@link StructuraBuilder} with default settings.
-         * By default, validation is enabled during parsing.
-         */
-        public StructuraBuilder() {
-            // Default constructor
-        }
 
         /**
          * Sets whether to validate the configuration during parsing.
@@ -102,6 +98,44 @@ public class Structura {
     }
 
     /**
+     * Reads content from various sources (Path, File, or resource).
+     *
+     * @param source the source to read from (Path, File, or String for resources)
+     * @return the content as a String
+     * @throws IOException if reading fails
+     */
+    private static String readContent(Object source) throws IOException {
+        return switch (source) {
+            case Path path -> Files.readString(path);
+            case File file -> Files.readString(file.toPath());
+            case String resourcePath -> {
+                try (var stream = Structura.class.getResourceAsStream(resourcePath)) {
+                    if (stream == null) {
+                        throw new StructuraException("Resource not found: " + resourcePath);
+                    }
+                    yield new String(stream.readAllBytes());
+                }
+            }
+            default -> throw new IllegalArgumentException("Unsupported source type: " + source.getClass().getName());
+        };
+    }
+
+    /**
+     * Gets a user-friendly name for a source object.
+     *
+     * @param source the source object
+     * @return a descriptive name for error messages
+     */
+    private static String getSourceName(Object source) {
+        return switch (source) {
+            case Path p -> p.toAbsolutePath().toString();
+            case File f -> f.getAbsolutePath();
+            case String s -> s;
+            default -> "unknown";
+        };
+    }
+
+    /**
      * Parses a YAML content string into an enum of type E.
      *
      * @param yamlContent the YAML content as a string
@@ -122,13 +156,7 @@ public class Structura {
      * @throws StructuraException if there is an error during file reading or parsing
      */
     public static <E extends Enum<E> & Loadable> void loadEnum(Path filePath, Class<E> enumClass) {
-
-        try {
-            String content = Files.readString(filePath);
-            parseEnum(content, enumClass);
-        } catch (IOException e) {
-           throw new StructuraException("Unable to read file: " + filePath.toAbsolutePath(), e);
-        }
+        loadEnumInternal(filePath, enumClass);
     }
 
     /**
@@ -140,12 +168,7 @@ public class Structura {
      * @throws StructuraException if there is an error during file reading or parsing
      */
     public static <E extends Enum<E> & Loadable> void loadEnum(File file, Class<E> enumClass) {
-        try {
-            String content = Files.readString(file.toPath());
-            parseEnum(content, enumClass);
-        } catch (IOException e) {
-            throw new StructuraException("Unable to read file " + file.getAbsolutePath(), e);
-        }
+        loadEnumInternal(file, enumClass);
     }
 
     /**
@@ -157,14 +180,23 @@ public class Structura {
      * @throws StructuraException if there is an error during resource reading or parsing
      */
     public static <E extends Enum<E> & Loadable> void loadEnumFromResource(String resourcePath, Class<E> enumClass) {
-        try (var stream = Structura.class.getResourceAsStream(resourcePath)) {
-            if (stream == null) {
-                throw new StructuraException("Resource not found: " + resourcePath);
-            }
-            String content = new String(stream.readAllBytes());
+        loadEnumInternal(resourcePath, enumClass);
+    }
+
+    /**
+     * Internal implementation for loading enums from various sources.
+     *
+     * @param source the source to load from (Path, File, or String for resources)
+     * @param enumClass the class of the enum to load
+     * @param <E> the type of the enum, which must implement {@link Loadable}
+     * @throws StructuraException if there is an error during reading or parsing
+     */
+    private static <E extends Enum<E> & Loadable> void loadEnumInternal(Object source, Class<E> enumClass) {
+        try {
+            String content = readContent(source);
             parseEnum(content, enumClass);
         } catch (IOException e) {
-            throw new StructuraException("Unable to read ressource " + resourcePath, e);
+            throw new StructuraException("Unable to read file: " + getSourceName(source), e);
         }
     }
 
@@ -191,12 +223,7 @@ public class Structura {
      * @throws StructuraException if there is an error during file reading or parsing
      */
     public static <T extends Loadable> T load(Path filePath, Class<T> configClass) {
-        try {
-            String content = Files.readString(filePath);
-            return parse(content, configClass);
-        } catch (IOException e) {
-            throw new StructuraException("Unable to read file: " + filePath.toAbsolutePath(), e);
-        }
+        return loadInternal(filePath, configClass);
     }
 
     /**
@@ -209,12 +236,7 @@ public class Structura {
      * @throws StructuraException if there is an error during file reading or parsing
      */
     public static <T extends Loadable> T load(File file, Class<T> configClass) {
-        try {
-            String content = Files.readString(file.toPath());
-            return parse(content, configClass);
-        } catch (IOException e) {
-            throw new StructuraException("Unable to read file: " + file.getAbsolutePath(), e);
-        }
+        return loadInternal(file, configClass);
     }
 
     /**
@@ -227,14 +249,24 @@ public class Structura {
      * @throws StructuraException if there is an error during resource reading or parsing
      */
     public static <T extends Loadable> T loadFromResource(String resourcePath, Class<T> configClass) {
-        try (var stream = Structura.class.getResourceAsStream(resourcePath)) {
-            if (stream == null) {
-                throw new StructuraException("Resource not found: " + resourcePath);
-            }
-            String content = new String(stream.readAllBytes());
+        return loadInternal(resourcePath, configClass);
+    }
+
+    /**
+     * Internal implementation for loading configurations from various sources.
+     *
+     * @param source the source to load from (Path, File, or String for resources)
+     * @param configClass the class of the configuration to load
+     * @param <T> the type of the configuration, which must implement {@link Loadable}
+     * @return an instance of T populated with the parsed data
+     * @throws StructuraException if there is an error during reading or parsing
+     */
+    private static <T extends Loadable> T loadInternal(Object source, Class<T> configClass) {
+        try {
+            String content = readContent(source);
             return parse(content, configClass);
         } catch (IOException e) {
-            throw new StructuraException("Unable to read ressource " + resourcePath, e);
+            throw new StructuraException("Unable to read file: " + getSourceName(source), e);
         }
     }
 }

@@ -1,6 +1,5 @@
 package fr.traqueur.structura;
 
-import fr.traqueur.structura.api.Loadable;
 import fr.traqueur.structura.api.Structura;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
@@ -8,9 +7,8 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
-import java.util.Map;
 
+import static fr.traqueur.structura.fixtures.TestModels.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("Concrete Type Section Succession Tests")
@@ -18,19 +16,6 @@ class ConcreteTypeSectionTest {
 
     @TempDir
     Path tempDir;
-
-    // Concrete types (no @Polymorphic)
-    public record FoodItem(int nutrition, double saturation) implements Loadable {}
-    public record ServerConfig(String host, int port) implements Loadable {}
-    public record DatabaseInfo(String name, String url) implements Loadable {}
-
-    // Test records with Lists
-    public record ConfigWithFoodList(List<FoodItem> items) implements Loadable {}
-    public record ConfigWithServerList(List<ServerConfig> servers) implements Loadable {}
-
-    // Test records with Maps
-    public record ConfigWithFoodMap(Map<String, FoodItem> items) implements Loadable {}
-    public record ConfigWithServerMap(Map<String, ServerConfig> servers) implements Loadable {}
 
     @Nested
     @DisplayName("List Conversion Tests")

@@ -1,107 +1,14 @@
 package fr.traqueur.structura.integration;
 
-import fr.traqueur.structura.api.Loadable;
 import fr.traqueur.structura.api.Structura;
 import fr.traqueur.structura.registries.CustomReaderRegistry;
 import org.junit.jupiter.api.*;
 
-import java.util.List;
-import java.util.Map;
-
+import static fr.traqueur.structura.fixtures.TestModels.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("Custom Reader Integration Tests")
 class CustomReaderIntegrationTest {
-
-    // Mock Adventure API classes for testing
-    interface Component {
-        String asPlainText();
-    }
-
-    static class TextComponent implements Component {
-        private final String text;
-        private final String color;
-
-        TextComponent(String text, String color) {
-            this.text = text;
-            this.color = color;
-        }
-
-        @Override
-        public String asPlainText() {
-            return text;
-        }
-
-        public String getColor() {
-            return color;
-        }
-
-        @Override
-        public String toString() {
-            return "TextComponent{text='" + text + "', color='" + color + "'}";
-        }
-    }
-
-    static class MiniMessage {
-        private static final MiniMessage INSTANCE = new MiniMessage();
-
-        static MiniMessage miniMessage() {
-            return INSTANCE;
-        }
-
-        Component deserialize(String input) {
-            // Simple parsing: <color>text</color>
-            if (input.contains("<green>")) {
-                String text = input.replace("<green>", "").replace("</green>", "");
-                return new TextComponent(text, "green");
-            } else if (input.contains("<red>")) {
-                String text = input.replace("<red>", "").replace("</red>", "");
-                return new TextComponent(text, "red");
-            } else if (input.contains("<blue>")) {
-                String text = input.replace("<blue>", "").replace("</blue>", "");
-                return new TextComponent(text, "blue");
-            } else {
-                return new TextComponent(input, "white");
-            }
-        }
-    }
-
-    // Test configuration records
-    public record MessageConfig(
-            Component welcomeMessage,
-            Component errorMessage
-    ) implements Loadable {}
-
-    public record ChatConfig(
-            Component prefix,
-            Component suffix,
-            String playerName
-    ) implements Loadable {}
-
-    public record MessagesConfig(
-            List<Component> announcements,
-            Map<String, Component> customMessages
-    ) implements Loadable {}
-
-    public record SimpleConfig(String message) implements Loadable {}
-
-    public record ServerConfig(
-            String serverName,
-            int maxPlayers,
-            Component motd,
-            Component shutdownMessage,
-            List<Component> rules
-    ) implements Loadable {}
-
-    public record ChatFormat(
-            Component prefix,
-            Component suffix
-    ) implements Loadable {}
-
-    public record PlayerConfig(
-            String playerName,
-            ChatFormat chatFormat
-    ) implements Loadable {}
 
     @BeforeEach
     void setUp() {
@@ -288,7 +195,7 @@ class CustomReaderIntegrationTest {
                     message: "Hello World"
                     """;
 
-            SimpleConfig config = Structura.parse(yaml, SimpleConfig.class);
+            CustomReaderSimpleConfig config = Structura.parse(yaml, CustomReaderSimpleConfig.class);
 
             assertEquals("Hello World", config.message());
         }
@@ -337,6 +244,37 @@ class CustomReaderIntegrationTest {
     }
 
     @Nested
+    @DisplayName("Generic Types with Custom Readers")
+    class GenericTypesTest {
+
+        @Test
+        @DisplayName("Should convert List of generic types with custom reader")
+        void shouldConvertListOfGenericTypesWithCustomReader() {
+            // Register custom reader for Container<String> using TypeToken
+            CustomReaderRegistry.getInstance().register(
+                    new fr.traqueur.structura.types.TypeToken<Container<String>>() {},
+                    str -> new StringContainer("parsed:" + str)
+            );
+
+            String yaml = """
+                    containers:
+                      - "item1"
+                      - "item2"
+                      - "item3"
+                    """;
+
+            GenericCollectionConfig config = Structura.parse(yaml, GenericCollectionConfig.class);
+
+            assertNotNull(config.containers());
+            assertEquals(3, config.containers().size());
+
+            assertEquals("parsed:item1", config.containers().get(0).value());
+            assertEquals("parsed:item2", config.containers().get(1).value());
+            assertEquals("parsed:item3", config.containers().get(2).value());
+        }
+    }
+
+    @Nested
     @DisplayName("End-to-End Workflows")
     class EndToEndWorkflowsTest {
 
@@ -359,7 +297,7 @@ class CustomReaderIntegrationTest {
                       - "<blue>Rule 3: Have fun!</blue>"
                     """;
 
-            ServerConfig config = Structura.parse(yaml, ServerConfig.class);
+            ServerConfigWithComponents config = Structura.parse(yaml, ServerConfigWithComponents.class);
 
             assertEquals("MyServer", config.serverName());
             assertEquals(100, config.maxPlayers());

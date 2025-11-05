@@ -1,7 +1,5 @@
 package fr.traqueur.structura.mapping;
 
-import fr.traqueur.structura.annotations.Options;
-import fr.traqueur.structura.api.Loadable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -13,9 +11,14 @@ import java.lang.reflect.RecordComponent;
 import java.util.Map;
 import java.util.Set;
 
+import static fr.traqueur.structura.fixtures.TestModels.*;
 import static org.junit.jupiter.api.Assertions.*;
 
-@DisplayName("FieldMapper - Name Conversion and Key Logic Tests")
+/**
+ * Refactored FieldMapper tests using common test models.
+ * Tests name conversion, key component detection, and field analysis.
+ */
+@DisplayName("FieldMapper - Refactored Tests")
 class FieldMapperTest {
 
     private FieldMapper fieldMapper;
@@ -24,23 +27,6 @@ class FieldMapperTest {
     void setUp() {
         fieldMapper = new FieldMapper();
     }
-
-    // Test records
-    public record TestRecord(
-            String normalField,
-            @Options(name = "custom-name") String customField,
-            @Options(optional = true) String optionalField
-    ) implements Loadable {}
-
-    public record KeyRecord(
-            @Options(isKey = true) String id,
-            String value
-    ) implements Loadable {}
-
-    public record ComplexKeyRecord(
-            @Options(isKey = true) TestRecord complex,
-            String other
-    ) implements Loadable {}
 
     @Nested
     @DisplayName("Name Conversion Logic")
@@ -77,20 +63,33 @@ class FieldMapperTest {
         @Test
         @DisplayName("Should respect custom field names from @Options annotation")
         void shouldRespectCustomFieldNames() throws Exception {
-            var constructor = TestRecord.class.getDeclaredConstructors()[0];
+            // Using ConfigWithCustomNames which has @Options(name = "app-name") and @Options(name = "server-config")
+            var constructor = ConfigWithCustomNames.class.getDeclaredConstructors()[0];
             var parameters = constructor.getParameters();
 
-            // Normal field without annotation
-            String normalName = fieldMapper.getEffectiveFieldName(parameters[0], "normalField");
-            assertEquals("normal-field", normalName);
+            // Field with custom name "app-name"
+            String appName = fieldMapper.getEffectiveFieldName(parameters[0], "applicationName");
+            assertEquals("app-name", appName);
 
-            // Field with custom name
-            String customName = fieldMapper.getEffectiveFieldName(parameters[1], "customField");
-            assertEquals("custom-name", customName);
+            // Field with custom name "server-config"
+            String serverConfig = fieldMapper.getEffectiveFieldName(parameters[1], "serverConfig");
+            assertEquals("server-config", serverConfig);
+        }
 
-            // Optional field without custom name
-            String optionalName = fieldMapper.getEffectiveFieldName(parameters[2], "optionalField");
-            assertEquals("optional-field", optionalName);
+        @Test
+        @DisplayName("Should handle optional fields")
+        void shouldHandleOptionalFields() throws Exception {
+            // Using ConfigWithOptionalFields
+            var constructor = ConfigWithOptionalFields.class.getDeclaredConstructors()[0];
+            var parameters = constructor.getParameters();
+
+            // Required field
+            String requiredName = fieldMapper.getEffectiveFieldName(parameters[0], "required");
+            assertEquals("required", requiredName);
+
+            // Optional field
+            String optionalName = fieldMapper.getEffectiveFieldName(parameters[1], "optional");
+            assertEquals("optional", optionalName);
         }
     }
 
@@ -101,13 +100,15 @@ class FieldMapperTest {
         @Test
         @DisplayName("Should identify key components correctly")
         void shouldIdentifyKeyComponents() {
-            RecordComponent[] keyComponents = KeyRecord.class.getRecordComponents();
+            // Using SimpleKeyRecord which has @Options(isKey = true) on id field
+            RecordComponent[] keyComponents = SimpleKeyRecord.class.getRecordComponents();
             RecordComponent keyComponent = fieldMapper.findKeyComponent(keyComponents);
 
             assertNotNull(keyComponent);
             assertEquals("id", keyComponent.getName());
 
-            RecordComponent[] noKeyComponents = TestRecord.class.getRecordComponents();
+            // ConfigWithCustomNames has no key component
+            RecordComponent[] noKeyComponents = ConfigWithCustomNames.class.getRecordComponents();
             RecordComponent noKeyComponent = fieldMapper.findKeyComponent(noKeyComponents);
             assertNull(noKeyComponent);
         }
@@ -115,11 +116,11 @@ class FieldMapperTest {
         @Test
         @DisplayName("Should distinguish simple vs complex key mapping")
         void shouldDistinguishSimpleVsComplexKeyMapping() {
-            RecordComponent[] keyComponents = KeyRecord.class.getRecordComponents();
+            RecordComponent[] keyComponents = SimpleKeyRecord.class.getRecordComponents();
             RecordComponent keyComponent = fieldMapper.findKeyComponent(keyComponents);
 
             // Simple key mapping: single key with primitive type
-            Map<String, Object> simpleData = Map.of("key", Map.of("value", "test"));
+            Map<String, Object> simpleData = Map.of("key", Map.of("value-int", 42));
             assertTrue(fieldMapper.isSimpleKeyMapping(simpleData, keyComponent));
 
             // Complex key mapping: multiple fields
@@ -133,11 +134,12 @@ class FieldMapperTest {
         @Test
         @DisplayName("Should handle complex record key mapping")
         void shouldHandleComplexRecordKeyMapping() {
-            RecordComponent[] components = ComplexKeyRecord.class.getRecordComponents();
+            // Using ComplexKeyConfig which has @Options(isKey = true) on NestedKeyRecord
+            RecordComponent[] components = ComplexKeyConfig.class.getRecordComponents();
             RecordComponent keyComponent = fieldMapper.findKeyComponent(components);
 
             assertNotNull(keyComponent);
-            assertEquals("complex", keyComponent.getName());
+            assertEquals("server", keyComponent.getName());
 
             // Complex key with record type should always be complex mapping
             Map<String, Object> data = Map.of("single", "value");
@@ -152,12 +154,24 @@ class FieldMapperTest {
         @Test
         @DisplayName("Should extract all field names with proper conversion")
         void shouldExtractFieldNamesWithConversion() {
-            Set<String> fieldNames = fieldMapper.getRecordFieldNames(TestRecord.class);
+            // Using ConfigWithCustomNames
+            Set<String> fieldNames = fieldMapper.getRecordFieldNames(ConfigWithCustomNames.class);
+
+            assertEquals(2, fieldNames.size());
+            assertTrue(fieldNames.contains("app-name"));
+            assertTrue(fieldNames.contains("server-config"));
+        }
+
+        @Test
+        @DisplayName("Should handle fields with defaults and optional")
+        void shouldHandleFieldsWithDefaultsAndOptional() {
+            // Using ConfigWithOptionalFields
+            Set<String> fieldNames = fieldMapper.getRecordFieldNames(ConfigWithOptionalFields.class);
 
             assertEquals(3, fieldNames.size());
-            assertTrue(fieldNames.contains("normal-field"));
-            assertTrue(fieldNames.contains("custom-name"));
-            assertTrue(fieldNames.contains("optional-field"));
+            assertTrue(fieldNames.contains("required"));
+            assertTrue(fieldNames.contains("optional"));
+            assertTrue(fieldNames.contains("optional-with-default"));
         }
 
         @Test
@@ -206,12 +220,12 @@ class FieldMapperTest {
         @Test
         @DisplayName("Should correctly identify optional fields")
         void shouldIdentifyOptionalFields() throws Exception {
-            var constructor = TestRecord.class.getDeclaredConstructors()[0];
+            var constructor = ConfigWithOptionalFields.class.getDeclaredConstructors()[0];
             var parameters = constructor.getParameters();
 
-            assertFalse(fieldMapper.isOptional(parameters[0])); // normalField
-            assertFalse(fieldMapper.isOptional(parameters[1])); // customField
-            assertTrue(fieldMapper.isOptional(parameters[2]));  // optionalField
+            assertFalse(fieldMapper.isOptional(parameters[0])); // required
+            assertTrue(fieldMapper.isOptional(parameters[1]));  // optional
+            assertTrue(fieldMapper.isOptional(parameters[2]));  // optionalWithDefault
         }
     }
 }
