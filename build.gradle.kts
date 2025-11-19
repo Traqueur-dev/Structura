@@ -70,7 +70,12 @@ tasks.build {
 }
 
 tasks.shadowJar {
-    archiveClassifier.set("")
+    rootProject.extra.properties["sha"]?.let { sha ->
+        archiveClassifier.set("${rootProject.extra.properties["classifier"]}-${sha}")
+    } ?: run {
+        archiveClassifier.set(rootProject.extra.properties["classifier"] as String?)
+    }
+    destinationDirectory.set(rootProject.extra["targetFolder"] as File)
 }
 
 tasks.processResources {
