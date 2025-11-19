@@ -9,13 +9,13 @@ plugins {
 group = "fr.traqueur"
 version = property("version") as String
 
-rootProject.extra.properties["sha"]?.let { sha ->
-    version = sha
-}
-
 extra.set("targetFolder", file("target/"))
 extra.set("classifier", System.getProperty("archive.classifier"))
 extra.set("sha", System.getProperty("github.sha"))
+
+rootProject.extra.properties["sha"]?.let { sha ->
+    version = sha
+}
 
 repositories {
     mavenCentral()
