@@ -9,6 +9,10 @@ plugins {
 group = "fr.traqueur"
 version = property("version") as String
 
+rootProject.extra.properties["sha"]?.let { sha ->
+    version = sha
+}
+
 extra.set("targetFolder", file("target/"))
 extra.set("classifier", System.getProperty("archive.classifier"))
 extra.set("sha", System.getProperty("github.sha"))
@@ -66,12 +70,7 @@ tasks.build {
 }
 
 tasks.shadowJar {
-    archiveVersion.set("")
-    rootProject.extra.properties["sha"]?.let { sha ->
-        archiveClassifier.set("${rootProject.extra.properties["classifier"]}-${sha}")
-    } ?: run {
-        archiveClassifier.set(rootProject.extra.properties["classifier"] as String?)
-    }
+    archiveClassifier.set("")
     destinationDirectory.set(rootProject.extra["targetFolder"] as File)
 }
 
