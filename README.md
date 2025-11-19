@@ -25,11 +25,11 @@ Add Structura to your project:
 
 ```gradle
 repository {
-    maven { url = "https://jitpack.io" } // JitPack repository for Structura
+    maven { url = "https://repo.groupez.dev/releases" } // Add Structura repository replace releases with snapshots if needed
 }
 
 dependencies {
-    implementation("com.github.Traqueur-dev:Structura:<VERSION>") // Replace <VERSION> with the latest release
+    implementation("fr.traqueur:structura:<VERSION>") // Replace <VERSION> with the latest release
     implementation("org.yaml:snakeyaml:2.4") // Required for YAML parsing
 }
 ```
