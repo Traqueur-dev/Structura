@@ -2,11 +2,20 @@ import java.util.*
 
 plugins {
     id("java-library")
-    id("maven-publish")
+    id("re.alwyn974.groupez.publish") version "1.0.0"
+    id("com.gradleup.shadow") version "9.0.0-beta11"
 }
 
 group = "fr.traqueur"
 version = property("version")!!
+
+rootProject.extra.properties["sha"]?.let { sha ->
+    version = sha
+}
+
+extra.set("targetFolder", file("target/"))
+extra.set("classifier", System.getProperty("archive.classifier"))
+extra.set("sha", System.getProperty("github.sha"))
 
 repositories {
     mavenCentral()
@@ -56,6 +65,14 @@ tasks.register("generateVersionProperties") {
     }
 }
 
+tasks.build {
+    dependsOn(tasks.shadowJar)
+}
+
+tasks.shadowJar {
+    archiveClassifier.set("")
+}
+
 tasks.processResources {
     dependsOn("generateVersionProperties")
 }
@@ -65,10 +82,7 @@ java {
     withJavadocJar()
 }
 
-publishing {
-    publications {
-        create<MavenPublication>("maven") {
-            from(components["java"])
-        }
-    }
+publishConfig {
+    githubOwner = "Traqueur-dev"
+    useRootProjectName = true
 }
