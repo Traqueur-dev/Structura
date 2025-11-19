@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "fr.traqueur"
-version = property("version")!!
+version = property("version") as String
 
 extra.set("targetFolder", file("target/"))
 extra.set("classifier", System.getProperty("archive.classifier"))
@@ -66,8 +66,7 @@ tasks.build {
 }
 
 tasks.shadowJar {
-    archiveBaseName.set(project.name)
-    archiveVersion.set(project.version.toString())
+    archiveVersion.set("")
     rootProject.extra.properties["sha"]?.let { sha ->
         archiveClassifier.set("${rootProject.extra.properties["classifier"]}-${sha}")
     } ?: run {
@@ -85,7 +84,3 @@ java {
     withJavadocJar()
 }
 
-publishConfig {
-    githubOwner = "Traqueur-dev"
-    useRootProjectName = true
-}
