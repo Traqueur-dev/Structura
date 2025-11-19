@@ -13,10 +13,6 @@ extra.set("targetFolder", file("target/"))
 extra.set("classifier", System.getProperty("archive.classifier"))
 extra.set("sha", System.getProperty("github.sha"))
 
-rootProject.extra.properties["sha"]?.let { sha ->
-    version = sha
-}
-
 repositories {
     mavenCentral()
 }
@@ -70,6 +66,8 @@ tasks.build {
 }
 
 tasks.shadowJar {
+    archiveBaseName.set(project.name)
+    archiveVersion.set(project.version.toString())
     rootProject.extra.properties["sha"]?.let { sha ->
         archiveClassifier.set("${rootProject.extra.properties["classifier"]}-${sha}")
     } ?: run {
