@@ -10,6 +10,7 @@ import fr.traqueur.structura.registries.PolymorphicRegistry;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -21,6 +22,7 @@ import java.util.stream.Collectors;
 public class ValueConverter {
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE;
+    private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
 
     private final RecordInstanceFactory recordFactory;
 
@@ -275,6 +277,10 @@ public class ValueConverter {
 
         if(targetType == LocalDate.class) {
             return LocalDate.parse(value.toString(), DATE_FORMATTER);
+        }
+
+        if(targetType == LocalDateTime.class) {
+            return LocalDateTime.parse(value.toString(), DATE_TIME_FORMATTER);
         }
 
         if (targetType == int.class || targetType == Integer.class) {
