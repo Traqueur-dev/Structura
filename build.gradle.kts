@@ -83,3 +83,7 @@ java {
     withJavadocJar()
 }
 
+publishConfig {
+    githubOwner = "Traqueur-dev"
+    useRootProjectName = true
+}
