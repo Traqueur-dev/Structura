@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -107,6 +108,13 @@ class ValueConverterTest {
         void shouldHandleLocalDateConversion() {
             var localDate = java.time.LocalDate.of(2023, 10, 5);
             assertEquals(localDate, valueConverter.convert("2023-10-05", java.time.LocalDate.class, "test"));
+        }
+
+        @Test
+        @DisplayName("Should handle LocalDateTime conversion from string")
+        void shouldHandleLocalDateTimeConversion() {
+            var localDate = LocalDateTime.of(2023, 10, 5, 14, 30, 0);
+            assertEquals(localDate, valueConverter.convert("2023-10-05T14:30:00", LocalDateTime.class, "test"));
         }
     }
 
