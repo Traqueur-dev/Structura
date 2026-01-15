@@ -262,6 +262,49 @@ class IntegrationTest {
     }
 
     @Nested
+    @DisplayName("Key Record List Tests")
+    class KeyRecordListTest {
+
+        @Test
+        @DisplayName("Should parse list of records with @Options(isKey=true) from YAML file")
+        void shouldParseListOfKeyRecordsFromYamlFile() throws IOException {
+            Path configFile = createTempYamlFile(KEY_RECORD_LIST_CONFIG);
+
+            try {
+                KeyRecordListConfig config = Structura.load(configFile, KeyRecordListConfig.class);
+
+                assertNotNull(config.items());
+                assertEquals(3, config.items().size());
+
+                // Find each record by its id (YAML map key becomes the id field)
+                SimpleKeyRecord first = config.items().stream()
+                        .filter(r -> "first".equals(r.id()))
+                        .findFirst()
+                        .orElseThrow(() -> new AssertionError("Record with id 'first' not found"));
+
+                SimpleKeyRecord second = config.items().stream()
+                        .filter(r -> "second".equals(r.id()))
+                        .findFirst()
+                        .orElseThrow(() -> new AssertionError("Record with id 'second' not found"));
+
+                SimpleKeyRecord third = config.items().stream()
+                        .filter(r -> "third".equals(r.id()))
+                        .findFirst()
+                        .orElseThrow(() -> new AssertionError("Record with id 'third' not found"));
+
+                assertEquals(100, first.valueInt());
+                assertEquals(10.5, first.valueDouble());
+                assertEquals(200, second.valueInt());
+                assertEquals(20.5, second.valueDouble());
+                assertEquals(300, third.valueInt());
+                assertEquals(30.5, third.valueDouble());
+            } finally {
+                deleteTempFile(configFile);
+            }
+        }
+    }
+
+    @Nested
     @DisplayName("End-to-End Workflow Validation")
     class EndToEndWorkflowTest {
 

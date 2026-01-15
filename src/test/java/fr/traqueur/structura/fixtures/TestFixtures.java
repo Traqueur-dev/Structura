@@ -136,6 +136,19 @@ public final class TestFixtures {
         debug-mode: true
         """;
 
+    public static final String KEY_RECORD_LIST_CONFIG = """
+        items:
+          first:
+            value-int: 100
+            value-double: 10.5
+          second:
+            value-int: 200
+            value-double: 20.5
+          third:
+            value-int: 300
+            value-double: 30.5
+        """;
+
     // ==================== Inline Fields ====================
 
     public static final String INLINE_CONFIG = """

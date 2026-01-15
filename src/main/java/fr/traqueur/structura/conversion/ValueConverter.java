@@ -1,5 +1,6 @@
 package fr.traqueur.structura.conversion;
 
+import fr.traqueur.structura.annotations.Options;
 import fr.traqueur.structura.annotations.Polymorphic;
 import fr.traqueur.structura.api.Loadable;
 import fr.traqueur.structura.exceptions.StructuraException;
@@ -208,9 +209,16 @@ public class ValueConverter {
      */
     private void convertMapEntriesToRecords(Map<String, Object> valueMap, Type elementGenericType, Class<?> elementRawType,
                                            Collection<Object> result, String prefix) {
+        boolean hasKey = hasKeyComponent(elementRawType);
         for (Map.Entry<String, Object> entry : valueMap.entrySet()) {
             Object itemValue = entry.getValue();
-            result.add(convert(itemValue, elementGenericType, elementRawType, prefix));
+            if (hasKey) {
+                // Wrap as single-entry map so isSimpleKeyMapping works correctly
+                Map<String, Object> wrappedEntry = Map.of(entry.getKey(), itemValue);
+                result.add(convert(wrappedEntry, elementGenericType, elementRawType, prefix));
+            } else {
+                result.add(convert(itemValue, elementGenericType, elementRawType, prefix));
+            }
         }
     }
 
@@ -536,5 +544,22 @@ public class ValueConverter {
         valueMap.put(discriminatorKey, discriminatorValue);
 
         return valueMap;
+    }
+
+    /**
+     * Checks if a record type has a component marked with @Options(isKey = true).
+     *
+     * @param recordType the record type to check
+     * @return true if the record has a key component
+     */
+    private boolean hasKeyComponent(Class<?> recordType) {
+        if (!recordType.isRecord()) {
+            return false;
+        }
+        return Arrays.stream(recordType.getRecordComponents())
+            .anyMatch(component -> {
+                Options options = component.getAnnotation(Options.class);
+                return options != null && options.isKey();
+            });
     }
 }

@@ -104,6 +104,10 @@ public final class TestModels {
         @DefaultDouble(0.0) double valueDouble
     ) implements Loadable {}
 
+    public record KeyRecordListConfig(
+        List<SimpleKeyRecord> items
+    ) implements Loadable {}
+
     public record NestedKeyRecord(
         String host,
         @DefaultInt(8080) int port,

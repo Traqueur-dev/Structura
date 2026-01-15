@@ -48,6 +48,7 @@ class ValueConverterTest {
     public Map<String, String> getStringStringMap() { return null; }
     public Map<String, Integer> getStringIntegerMap() { return null; }
     public List<TestDatabaseConfig> getDatabaseConfigList() { return null; }
+    public List<SimpleKeyRecord> getSimpleKeyRecordList() { return null; }
 
     @Nested
     @DisplayName("Complex Type Conversions")
@@ -199,6 +200,39 @@ class ValueConverterTest {
                     valueConverter.convert(List.of("a"), listType, Collection.class, "test")
             );
             assertTrue(exception.getMessage().contains("Unsupported collection type"));
+        }
+
+        @Test
+        @DisplayName("Should convert map of records with @Options(isKey=true) to list")
+        void shouldConvertMapOfKeyRecordsToList() throws Exception {
+            // This test case replicates the Currency/EconomiesSettings scenario
+            // where YAML map keys should become the 'id' field value
+            Map<String, Object> currenciesMap = Map.of(
+                    "first", Map.of("value-int", 100, "value-double", 10.5),
+                    "second", Map.of("value-int", 200, "value-double", 20.5),
+                    "third", Map.of("value-int", 300, "value-double", 30.5)
+            );
+
+            Type listType = ValueConverterTest.class.getMethod("getSimpleKeyRecordList").getGenericReturnType();
+
+            @SuppressWarnings("unchecked")
+            List<SimpleKeyRecord> result = (List<SimpleKeyRecord>) valueConverter.convert(
+                    currenciesMap, listType, List.class, ""
+            );
+
+            assertCollectionSize(3, result, "key record list");
+
+            // Find each record by its id (map key becomes the id field)
+            SimpleKeyRecord first = result.stream().filter(r -> "first".equals(r.id())).findFirst().orElseThrow();
+            SimpleKeyRecord second = result.stream().filter(r -> "second".equals(r.id())).findFirst().orElseThrow();
+            SimpleKeyRecord third = result.stream().filter(r -> "third".equals(r.id())).findFirst().orElseThrow();
+
+            assertEquals(100, first.valueInt());
+            assertEquals(10.5, first.valueDouble());
+            assertEquals(200, second.valueInt());
+            assertEquals(20.5, second.valueDouble());
+            assertEquals(300, third.valueInt());
+            assertEquals(30.5, third.valueDouble());
         }
     }
 
