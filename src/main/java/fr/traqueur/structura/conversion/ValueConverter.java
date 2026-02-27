@@ -5,6 +5,8 @@ import fr.traqueur.structura.annotations.Polymorphic;
 import fr.traqueur.structura.api.Loadable;
 import fr.traqueur.structura.exceptions.StructuraException;
 import fr.traqueur.structura.factory.RecordInstanceFactory;
+import fr.traqueur.structura.references.Reference;
+import fr.traqueur.structura.references.ReferenceRegistry;
 import fr.traqueur.structura.registries.CustomReaderRegistry;
 import fr.traqueur.structura.registries.PolymorphicRegistry;
 
@@ -77,6 +79,10 @@ public class ValueConverter {
             return value;
         }
 
+        if (Reference.class.isAssignableFrom(rawType) && genericType instanceof ParameterizedType refParamType) {
+            return convertToReference(value, refParamType, prefix);
+        }
+
         if (isSettingsRecord(rawType) && value instanceof Map<?, ?>) {
             @SuppressWarnings("unchecked")
             Map<String, Object> valueMap = (Map<String, Object>) value;
@@ -91,8 +97,9 @@ public class ValueConverter {
      */
     private boolean needsSpecialConversion(Class<?> rawType, Type genericType) {
         // Les collections et maps avec génériques ont besoin d'une conversion spéciale
-        return (Collection.class.isAssignableFrom(rawType) || Map.class.isAssignableFrom(rawType))
-                && genericType instanceof ParameterizedType;
+        return ((Collection.class.isAssignableFrom(rawType) || Map.class.isAssignableFrom(rawType))
+                && genericType instanceof ParameterizedType)
+                || (Reference.class.isAssignableFrom(rawType) && genericType instanceof ParameterizedType);
     }
 
     /**
@@ -269,6 +276,34 @@ public class ValueConverter {
                             entry -> convert(entry.getValue(), valueType, prefix)
                     ));
         }
+    }
+
+    /**
+     * Converts a string value to a {@code Reference<T>} using the ReferenceRegistry.
+     * If the value is already a {@code Reference<?>} (e.g., from {@code @DefaultReference}),
+     * it is returned as-is.
+     *
+     * @param value     the YAML value (must be a String key or an existing Reference)
+     * @param paramType the parameterized type of the Reference field
+     * @param prefix    the path prefix for error messages
+     * @return a lazy {@link Reference} resolved via {@link ReferenceRegistry}
+     */
+    private Reference<?> convertToReference(Object value, ParameterizedType paramType, String prefix) {
+        if (value instanceof Reference<?> alreadyResolved) {
+            return alreadyResolved;
+        }
+        if (!(value instanceof String stringValue)) {
+            throw new StructuraException(
+                "Cannot convert " + value.getClass().getName() + " to Reference at " + prefix +
+                " (expected a String key)"
+            );
+        }
+        Type[] typeArgs = paramType.getActualTypeArguments();
+        if (typeArgs.length != 1) {
+            throw new StructuraException("Reference type must have exactly 1 generic parameter at " + prefix);
+        }
+        Class<?> referencedType = getClassFromType(typeArgs[0]);
+        return ReferenceRegistry.getInstance().resolve(stringValue, referencedType);
     }
 
     /**

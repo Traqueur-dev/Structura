@@ -62,6 +62,7 @@ public class Validator {
         for (RecordComponent component : components) {
             try {
                 Method accessor = component.getAccessor();
+                accessor.setAccessible(true);
                 Object value = accessor.invoke(record);
                 String fieldPath = path.isEmpty() ? component.getName() : path + "." + component.getName();
 

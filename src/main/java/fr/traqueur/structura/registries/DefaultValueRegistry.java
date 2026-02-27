@@ -1,6 +1,8 @@
 package fr.traqueur.structura.registries;
 
 import fr.traqueur.structura.annotations.defaults.*;
+import fr.traqueur.structura.references.ReferenceRegistry;
+import fr.traqueur.structura.references.Reference;
 
 import java.lang.annotation.Annotation;
 import java.util.List;
@@ -106,6 +108,7 @@ public class DefaultValueRegistry {
         register(Integer.class, DefaultInt.class, DefaultInt::value);
         register(double.class, DefaultDouble.class, DefaultDouble::value);
         register(Double.class, DefaultDouble.class, DefaultDouble::value);
+        register(Reference.class, DefaultReference.class, annotation -> ReferenceRegistry.getInstance().resolve(annotation.key(), annotation.type()));
     }
 
 

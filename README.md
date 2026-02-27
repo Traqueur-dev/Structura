@@ -616,6 +616,85 @@ registry.register(new TypeToken<Box<String>>() {}, str -> new Box<>("SPECIFIC:" 
    new TypeToken<List<?>>() {}
    ```
 
+### Reference<T> — External Object References
+
+`Reference<T>` lets you declare a field in a `Loadable` record whose YAML value is a plain string key that maps to a live, externally managed object. Structura resolves it automatically without any `CustomReaderRegistry` setup.
+
+#### When to use it
+
+Use `Reference<T>` when your config needs to point to an object that your application manages (e.g., a loaded arena, a plugin's manager instance) rather than a nested YAML section.
+
+#### 1. Register a provider at startup
+
+```java
+import fr.traqueur.structura.references.ReferenceRegistry;
+
+// Register once — typically in your plugin's onEnable() or startup class
+ReferenceRegistry.getInstance().install(
+    Arena.class,
+    Arena::id,                                  // key extractor: how to get the string key from an Arena
+    () -> plugin.getArenaManager().getArenas()  // live collection supplier
+);
+```
+
+#### 2. Declare `Reference<T>` in your record
+
+```java
+import fr.traqueur.structura.references.Reference;
+
+public record GameConfig(
+    Reference<Arena> arena,   // YAML value: "my-arena-id"
+    int maxPlayers
+) implements Loadable {}
+```
+
+#### 3. Write your YAML
+
+```yaml
+arena: "my-arena-id"
+max-players: 20
+```
+
+#### 4. Parse and use
+
+```java
+GameConfig config = Structura.parse(yaml, GameConfig.class);
+
+String key  = config.arena().key();      // "my-arena-id"
+Arena arena = config.arena().element();  // live Arena object from the manager
+```
+
+#### Lazy resolution
+
+`Reference#element()` resolves from the live provider collection **at call time**. This means:
+
+- Objects added to the collection after parsing are still resolvable.
+- A stale `Reference` can reflect updates if the collection is mutable.
+- `StructuraException` is thrown at `element()` call time (not parse time) if the key is not found.
+
+#### Error handling
+
+```java
+// No provider installed → StructuraException at parse time
+// Key not found in the collection → StructuraException at element() call time
+try {
+    Arena arena = config.arena().element();
+} catch (StructuraException e) {
+    // "No Arena found for key 'my-arena-id'"
+}
+```
+
+#### Using `@DefaultString` with `Reference<T>`
+
+```java
+public record GameConfig(
+    @DefaultString("default-arena") Reference<Arena> arena,
+    int maxPlayers
+) implements Loadable {}
+```
+
+If the `arena` key is absent from YAML, the string `"default-arena"` is used as the reference key.
+
 ### Optional Fields
 
 Mark fields as optional to avoid exceptions when missing:

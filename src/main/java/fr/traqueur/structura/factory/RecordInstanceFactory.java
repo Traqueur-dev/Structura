@@ -346,6 +346,7 @@ public class RecordInstanceFactory {
     private Object instantiateRecord(Class<?> recordClass, Object[] args) {
         try {
             Constructor<?> constructor = recordClass.getDeclaredConstructors()[0];
+            constructor.setAccessible(true);
             return constructor.newInstance(args);
         } catch (ReflectiveOperationException e) {
             throw new StructuraException("Failed to create instance of " + recordClass.getName() +
