@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./gradlew :structura-writers:test)",
+      "Bash(./gradlew test:*)",
+      "Bash(./gradlew :structura-writers:compileJava)",
+      "Bash(./gradlew :structura-writers:test --info)"
+    ]
+  }
+}
