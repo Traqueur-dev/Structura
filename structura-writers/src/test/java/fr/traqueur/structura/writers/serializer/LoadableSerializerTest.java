@@ -21,6 +21,7 @@ class LoadableSerializerTest {
     static void setupRegistries() {
         tryCreate(Animal.class,   r -> { r.register("dog", Dog.class); r.register("cat", Cat.class); });
         tryCreate(DbEngine.class, r -> { r.register("mysql", MySQLEngine.class); r.register("postgres", PostgreSQLEngine.class); });
+        tryCreate(ItemMeta.class, r -> { r.register("food", FoodMeta.class); r.register("potion", PotionMeta.class); });
     }
 
     @AfterAll
@@ -129,6 +130,47 @@ class LoadableSerializerTest {
         assertTrue(yaml.contains("engine: mysql"), "discriminator at root");
         assertTrue(yaml.contains("host: db.local"), "concrete field at root");
         assertFalse(yaml.contains("db:"), "'db' key must not appear when fully inline");
+    }
+
+    // ── @Polymorphic(useKey = true) ───────────────────────────────────────────
+
+    @Test
+    void useKeyPolymorphicSingleFieldDropsFieldName() {
+        String yaml = serializer.toYaml(new UseKeyItemConfig("Apple", new FoodMeta(10)));
+
+        // discriminator value "food" becomes the key; field name "meta" must not appear
+        assertTrue(yaml.contains("food:"),      "discriminator value must be the YAML key");
+        assertTrue(yaml.contains("nutrition: 10"));
+        assertFalse(yaml.contains("meta:"),     "'meta' field name must not appear with useKey");
+    }
+
+    @Test
+    void useKeyPolymorphicListBecomesYamlMap() {
+        String yaml = serializer.toYaml(new UseKeyItemListConfig(
+            List.of(new FoodMeta(8), new PotionMeta("#00FF00"))
+        ));
+
+        assertTrue(yaml.contains("food:"),        "food discriminator key missing");
+        assertTrue(yaml.contains("nutrition: 8"));
+        assertTrue(yaml.contains("potion:"),      "potion discriminator key missing");
+        assertTrue(yaml.contains("#00FF00"));
+        // must not contain the standard list-item discriminator pattern "type: food"
+        assertFalse(yaml.contains("type: food"), "standard discriminator must not appear with useKey");
+    }
+
+    @Test
+    void useKeyPolymorphicMapOmitsExtraDiscriminator() {
+        String yaml = serializer.toYaml(new UseKeyItemMapConfig(
+            Map.of("slot1", new FoodMeta(5), "slot2", new PotionMeta("#0000FF"))
+        ));
+
+        assertTrue(yaml.contains("slot1:"));
+        assertTrue(yaml.contains("slot2:"));
+        assertTrue(yaml.contains("nutrition: 5"));
+        assertTrue(yaml.contains("#0000FF"));
+        // concrete fields must NOT be wrapped with a redundant "type:" key
+        assertFalse(yaml.contains("type: food"),   "useKey map must not embed type discriminator");
+        assertFalse(yaml.contains("type: potion"), "useKey map must not embed type discriminator");
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

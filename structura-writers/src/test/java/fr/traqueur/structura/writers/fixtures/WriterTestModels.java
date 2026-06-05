@@ -145,4 +145,35 @@ public final class WriterTestModels {
         @DefaultString("App")            String   appName,
         @Options(inline = true) DbEngine db
     ) implements Loadable {}
+
+    // =========================================================================
+    // @Polymorphic(useKey = true) — discriminator value becomes the YAML key
+    // =========================================================================
+
+    @Polymorphic(key = "type", useKey = true)
+    public interface ItemMeta extends Loadable {}
+
+    public record FoodMeta(
+        @DefaultInt(8) int nutrition
+    ) implements ItemMeta {}
+
+    public record PotionMeta(
+        @DefaultString("#FF0000") String color
+    ) implements ItemMeta {}
+
+    /** Single useKey polymorphic field — field name is replaced by the discriminator value. */
+    public record UseKeyItemConfig(
+        @DefaultString("Apple") String  name,
+        ItemMeta                        meta
+    ) implements Loadable {}
+
+    /** List of useKey polymorphic elements — serialized as a YAML map. */
+    public record UseKeyItemListConfig(
+        List<ItemMeta> metadata
+    ) implements Loadable {}
+
+    /** Map whose values are useKey polymorphic — map key IS the discriminator. */
+    public record UseKeyItemMapConfig(
+        Map<String, ItemMeta> bySlot
+    ) implements Loadable {}
 }

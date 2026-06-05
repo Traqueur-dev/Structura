@@ -127,13 +127,15 @@ public class LoadableSerializer {
             Polymorphic poly      = type.getAnnotation(Polymorphic.class);
             String      discValue = lookupRegisteredName(value.getClass(), type);
 
-            if (poly.inline()) {
+            if (poly.useKey()) {
+                // useKey: discriminator value becomes the YAML key; field name is dropped
+                result.put(discValue, toMap(value));
+            } else if (poly.inline()) {
                 // Discriminator at parent level, concrete fields nested under key
                 result.put(poly.key(), discValue);
                 result.put(key, toMap(value));
             } else {
                 // Standard: discriminator first, inside the nested map
-                // TODO: handle useKey = true
                 Map<String, Object> nested = new LinkedHashMap<>();
                 nested.put(poly.key(), discValue);
                 nested.putAll(toMap(value));
@@ -179,10 +181,19 @@ public class LoadableSerializer {
         Class<?> elementRawType = getRawClass(elementGenericType);
 
         // Polymorphic list: discriminator inside each element map
-        // TODO: handle useKey = true (map-keyed format)
         // TODO: handle isKey records (map-keyed format)
         if (isPolymorphicInterface(elementRawType)) {
-            Polymorphic  poly       = elementRawType.getAnnotation(Polymorphic.class);
+            Polymorphic poly = elementRawType.getAnnotation(Polymorphic.class);
+
+            if (poly.useKey()) {
+                // useKey list: becomes a YAML map — discriminator value is the key
+                Map<String, Object> resultMap = new LinkedHashMap<>();
+                for (Object elem : elements) {
+                    resultMap.put(lookupRegisteredName(elem.getClass(), elementRawType), toMap(elem));
+                }
+                return resultMap;
+            }
+
             List<Object> resultList = new ArrayList<>();
             for (Object elem : elements) {
                 Map<String, Object> entry = new LinkedHashMap<>();
@@ -205,15 +216,19 @@ public class LoadableSerializer {
         Map<String, Object> result = new LinkedHashMap<>();
 
         // Polymorphic map values: discriminator inside each value
-        // TODO: handle useKey = true
         if (isPolymorphicInterface(valueRawType)) {
             Polymorphic poly = valueRawType.getAnnotation(Polymorphic.class);
             for (Map.Entry<?, ?> e : map.entrySet()) {
                 if (e.getValue() == null) { result.put(e.getKey().toString(), null); continue; }
-                Map<String, Object> valueMap = new LinkedHashMap<>();
-                valueMap.put(poly.key(), lookupRegisteredName(e.getValue().getClass(), valueRawType));
-                valueMap.putAll(toMap(e.getValue()));
-                result.put(e.getKey().toString(), valueMap);
+                if (poly.useKey()) {
+                    // useKey map: the map key IS the discriminator — just write concrete fields
+                    result.put(e.getKey().toString(), toMap(e.getValue()));
+                } else {
+                    Map<String, Object> valueMap = new LinkedHashMap<>();
+                    valueMap.put(poly.key(), lookupRegisteredName(e.getValue().getClass(), valueRawType));
+                    valueMap.putAll(toMap(e.getValue()));
+                    result.put(e.getKey().toString(), valueMap);
+                }
             }
             return result;
         }
