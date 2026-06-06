@@ -100,7 +100,10 @@ public class LoadableSerializer {
         String   key      = fieldMapper.getEffectiveFieldName(parameter, component.getName());
 
         if (value == null) {
-            result.put(key, null);
+            // Optional null fields are silently omitted; non-optional nulls are written explicitly
+            if (opts == null || !opts.optional()) {
+                result.put(key, null);
+            }
             return;
         }
 
@@ -301,3 +304,4 @@ public class LoadableSerializer {
         }
     }
 }
+

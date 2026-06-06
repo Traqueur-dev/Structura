@@ -5,6 +5,8 @@ import fr.traqueur.structura.annotations.Polymorphic;
 import fr.traqueur.structura.annotations.defaults.*;
 import fr.traqueur.structura.api.Loadable;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -202,5 +204,44 @@ public final class WriterTestModels {
 
     public record RouteConfig(
         List<Route> routes
+    ) implements Loadable {}
+
+    // =========================================================================
+    // @Options(optional = true) — null field omission
+    // =========================================================================
+
+    public record MixedOptionalConfig(
+        @DefaultString("required")   String  required,
+        @Options(optional = true)    String  maybeNull,
+        @Options(optional = true)    Integer maybeInt
+    ) implements Loadable {}
+
+    // =========================================================================
+    // @Options(name = "...") — custom YAML key
+    // =========================================================================
+
+    public record CustomNameConfig(
+        @Options(name = "server-address") String serverAddress,
+        @DefaultInt(8080)                 int    port
+    ) implements Loadable {}
+
+    // =========================================================================
+    // Enum serialization
+    // =========================================================================
+
+    public enum Environment { DEVELOPMENT, STAGING, PRODUCTION_READY }
+
+    public record EnvConfig(
+        @DefaultString("App") String      name,
+        Environment                        env
+    ) implements Loadable {}
+
+    // =========================================================================
+    // LocalDate / LocalDateTime serialization
+    // =========================================================================
+
+    public record ScheduleConfig(
+        LocalDate     startDate,
+        LocalDateTime createdAt
     ) implements Loadable {}
 }

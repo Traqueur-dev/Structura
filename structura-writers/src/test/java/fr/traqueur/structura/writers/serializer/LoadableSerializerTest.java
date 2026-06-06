@@ -7,6 +7,8 @@ import fr.traqueur.structura.writers.registries.CustomWriterRegistry;
 import org.junit.jupiter.api.*;
 
 import java.lang.reflect.Field;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -66,6 +68,53 @@ class LoadableSerializerTest {
         String yaml = serializer.toYaml(new ColorConfig("red", new Color(255, 0, 0)));
         assertTrue(yaml.contains("255,0,0") || yaml.contains("'255,0,0'"));
         CustomWriterRegistry.getInstance().unregister(Color.class);
+    }
+
+    // ── @Options(optional = true) ────────────────────────────────────────────
+
+    @Test
+    void optionalNullFieldIsOmitted() {
+        String yaml = serializer.toYaml(new MixedOptionalConfig("hello", null, null));
+        assertTrue(yaml.contains("required: hello"));
+        assertFalse(yaml.contains("maybe-null:"), "null optional field must not appear in YAML");
+        assertFalse(yaml.contains("maybe-int:"),  "null optional field must not appear in YAML");
+    }
+
+    @Test
+    void optionalPresentFieldIsWritten() {
+        String yaml = serializer.toYaml(new MixedOptionalConfig("hello", "world", 42));
+        assertTrue(yaml.contains("maybe-null: world"));
+        assertTrue(yaml.contains("maybe-int: 42"));
+    }
+
+    // ── @Options(name = "...") ────────────────────────────────────────────────
+
+    @Test
+    void customFieldNameOverridesDefault() {
+        String yaml = serializer.toYaml(new CustomNameConfig("192.168.1.1", 9090));
+        assertTrue(yaml.contains("server-address: 192.168.1.1"), "custom name must be used as YAML key");
+        assertFalse(yaml.contains("server-address-field:"));
+        assertFalse(yaml.contains("serverAddress:"), "camelCase field name must not appear");
+    }
+
+    // ── Enum serialization ────────────────────────────────────────────────────
+
+    @Test
+    void enumFieldIsConvertedToKebabCase() {
+        String yaml = serializer.toYaml(new EnvConfig("App", Environment.PRODUCTION_READY));
+        assertTrue(yaml.contains("production-ready"), "enum value must be written in kebab-case");
+        assertFalse(yaml.contains("PRODUCTION_READY"), "raw enum name must not appear");
+    }
+
+    // ── LocalDate / LocalDateTime serialization ───────────────────────────────
+
+    @Test
+    void localDateIsIsoFormatted() {
+        String yaml = serializer.toYaml(new ScheduleConfig(
+            LocalDate.of(2024, 6, 15), LocalDateTime.of(2024, 6, 15, 10, 30, 0)
+        ));
+        assertTrue(yaml.contains("2024-06-15"),        "LocalDate must use ISO-8601 date format");
+        assertTrue(yaml.contains("2024-06-15T10:30"), "LocalDateTime must use ISO-8601 datetime format");
     }
 
     // ── @Options(inline = true) ───────────────────────────────────────────────
