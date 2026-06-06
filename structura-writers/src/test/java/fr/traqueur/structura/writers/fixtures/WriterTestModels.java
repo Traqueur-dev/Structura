@@ -176,4 +176,31 @@ public final class WriterTestModels {
     public record UseKeyItemMapConfig(
         Map<String, ItemMeta> bySlot
     ) implements Loadable {}
+
+    // =========================================================================
+    // @Options(isKey = true) — record field as map key in collections
+    // =========================================================================
+
+    /** Record where 'id' is the map key when serialized inside a collection. */
+    public record Permission(
+        @Options(isKey = true) String id,
+        @DefaultInt(1)         int    level
+    ) implements Loadable {}
+
+    /** Wraps a list of Permission — serialized as a map keyed by id. */
+    public record PermissionConfig(
+        @DefaultString("MyApp") String           appName,
+        List<Permission>                         permissions
+    ) implements Loadable {}
+
+    /** Record with two non-key fields — verifies the full nested map is preserved. */
+    public record Route(
+        @Options(isKey = true) String  path,
+        @DefaultString("GET")  String  method,
+        @DefaultBool(true)     boolean enabled
+    ) implements Loadable {}
+
+    public record RouteConfig(
+        List<Route> routes
+    ) implements Loadable {}
 }

@@ -173,6 +173,38 @@ class LoadableSerializerTest {
         assertFalse(yaml.contains("type: potion"), "useKey map must not embed type discriminator");
     }
 
+    // ── @Options(isKey = true) ────────────────────────────────────────────────
+
+    @Test
+    void isKeyListBecomesYamlMap() {
+        String yaml = serializer.toYaml(new PermissionConfig("MyApp",
+            List.of(new Permission("admin", 10), new Permission("user", 1))
+        ));
+
+        assertTrue(yaml.contains("admin:"),   "isKey value must become the YAML key");
+        assertTrue(yaml.contains("user:"),    "isKey value must become the YAML key");
+        assertTrue(yaml.contains("level: 10"));
+        assertTrue(yaml.contains("level: 1"));
+        // the key field itself must not appear as a nested field
+        assertFalse(yaml.contains("id: admin"), "'id' must not be written as a nested field");
+        assertFalse(yaml.contains("id: user"),  "'id' must not be written as a nested field");
+    }
+
+    @Test
+    void isKeyRecordWithMultipleNonKeyFieldsKeepsNestedMap() {
+        String yaml = serializer.toYaml(new RouteConfig(
+            List.of(new Route("/api/users", "GET", true), new Route("/api/admin", "POST", false))
+        ));
+
+        assertTrue(yaml.contains("/api/users:"));
+        assertTrue(yaml.contains("/api/admin:"));
+        assertTrue(yaml.contains("method: GET"));
+        assertTrue(yaml.contains("method: POST"));
+        assertTrue(yaml.contains("enabled: true"));
+        assertTrue(yaml.contains("enabled: false"));
+        assertFalse(yaml.contains("path:"), "'path' must not appear as a nested field");
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     @SuppressWarnings("unchecked")

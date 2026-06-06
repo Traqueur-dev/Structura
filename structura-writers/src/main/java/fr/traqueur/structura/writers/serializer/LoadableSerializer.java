@@ -180,8 +180,23 @@ public class LoadableSerializer {
 
         Class<?> elementRawType = getRawClass(elementGenericType);
 
+        // isKey records: list becomes a YAML map keyed by the @Options(isKey=true) field value
+        if (elementRawType.isRecord()) {
+            RecordComponent keyComp = fieldMapper.findKeyComponent(elementRawType.getRecordComponents());
+            if (keyComp != null) {
+                Map<String, Object> resultMap = new LinkedHashMap<>();
+                for (Object elem : elements) {
+                    Object   keyValue   = readField(keyComp, elem);
+                    String   mapKey     = keyValue == null ? "null" : keyValue.toString();
+                    Map<String, Object> fields = toMap(elem);
+                    fields.remove(fieldMapper.convertCamelCaseToKebabCase(keyComp.getName()));
+                    resultMap.put(mapKey, fields);
+                }
+                return resultMap;
+            }
+        }
+
         // Polymorphic list: discriminator inside each element map
-        // TODO: handle isKey records (map-keyed format)
         if (isPolymorphicInterface(elementRawType)) {
             Polymorphic poly = elementRawType.getAnnotation(Polymorphic.class);
 
