@@ -240,6 +240,21 @@ class LoadableSerializerTest {
     }
 
     @Test
+    void isKeyInsideMapValueStripsKeyField() {
+        String yaml = serializer.toYaml(new EndpointMapConfig(Map.of(
+            "/health", new Endpoint("/health", "GET", 200),
+            "/login",  new Endpoint("/login",  "POST", 201)
+        )));
+
+        assertTrue(yaml.contains("/health:"));
+        assertTrue(yaml.contains("/login:"));
+        assertTrue(yaml.contains("method: GET"));
+        assertTrue(yaml.contains("method: POST"));
+        assertTrue(yaml.contains("status-code: 200"));
+        assertFalse(yaml.contains("path:"), "'path' must not appear as a nested field");
+    }
+
+    @Test
     void isKeyRecordWithMultipleNonKeyFieldsKeepsNestedMap() {
         String yaml = serializer.toYaml(new RouteConfig(
             List.of(new Route("/api/users", "GET", true), new Route("/api/admin", "POST", false))

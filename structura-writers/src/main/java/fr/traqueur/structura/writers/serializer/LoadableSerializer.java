@@ -29,16 +29,17 @@ import java.util.stream.Collectors;
  * <ul>
  *   <li>camelCase → kebab-case key conversion</li>
  *   <li>{@code @Options(inline = true)} — flattens a sub-record's fields into the parent map</li>
+ *   <li>{@code @Options(optional = true)} — null fields are silently omitted</li>
+ *   <li>{@code @Options(name = "...")} — overrides the YAML key for a field</li>
+ *   <li>{@code @Options(isKey = true)} — record field used as map key in List and Map values</li>
  *   <li>{@code @Polymorphic} standard — discriminator written <em>inside</em> the nested map</li>
  *   <li>{@code @Polymorphic(inline = true)} — discriminator written at the <em>parent</em> level</li>
  *   <li>{@code @Polymorphic(inline = true)} + {@code @Options(inline = true)} — fully inline:
  *       discriminator and all concrete fields at parent level</li>
- * </ul>
- *
- * <p>Not yet handled (TODO):</p>
- * <ul>
- *   <li>{@code @Polymorphic(useKey = true)}</li>
- *   <li>{@code @Options(isKey = true)}</li>
+ *   <li>{@code @Polymorphic(useKey = true)} — discriminator value becomes the YAML key</li>
+ *   <li>{@link java.time.LocalDate} / {@link java.time.LocalDateTime} — ISO-8601 strings</li>
+ *   <li>{@link java.lang.Enum} — snake_case name converted to kebab-case</li>
+ *   <li>{@link fr.traqueur.structura.references.Reference} — serialized as its key string</li>
  * </ul>
  *
  * <p>Custom types can be handled by registering a {@link fr.traqueur.structura.writers.writer.Writer}
@@ -232,6 +233,21 @@ public class LoadableSerializer {
         Class<?> valueRawType     = getRawClass(valueGenericType);
 
         Map<String, Object> result = new LinkedHashMap<>();
+
+        // isKey records as map values: strip the key component from each nested map
+        if (valueRawType.isRecord()) {
+            RecordComponent keyComp = fieldMapper.findKeyComponent(valueRawType.getRecordComponents());
+            if (keyComp != null) {
+                String keyField = fieldMapper.convertCamelCaseToKebabCase(keyComp.getName());
+                for (Map.Entry<?, ?> e : map.entrySet()) {
+                    if (e.getValue() == null) { result.put(e.getKey().toString(), null); continue; }
+                    Map<String, Object> fields = toMap(e.getValue());
+                    fields.remove(keyField);
+                    result.put(e.getKey().toString(), fields);
+                }
+                return result;
+            }
+        }
 
         // Polymorphic map values: discriminator inside each value
         if (isPolymorphicInterface(valueRawType)) {

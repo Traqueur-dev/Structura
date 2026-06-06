@@ -35,6 +35,8 @@ public final class StructuraWriters {
 
         String yaml = SERIALIZER.toYaml(config);
         try {
+            Path parent = file.getParent();
+            if (parent != null) Files.createDirectories(parent);
             Files.writeString(file, yaml, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
         } catch (IOException e) {
             throw new StructuraWriterException("Failed to write configuration to: " + file.toAbsolutePath(), e);

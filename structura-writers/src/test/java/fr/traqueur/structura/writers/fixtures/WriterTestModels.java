@@ -244,4 +244,28 @@ public final class WriterTestModels {
         LocalDate     startDate,
         LocalDateTime createdAt
     ) implements Loadable {}
+
+    // =========================================================================
+    // @Options(isKey = true) inside a Map value
+    // =========================================================================
+
+    /** Same as Route but used to test Map<String, Route> serialization. */
+    public record Endpoint(
+        @Options(isKey = true) String  path,
+        @DefaultString("GET")  String  method,
+        @DefaultInt(200)       int     statusCode
+    ) implements Loadable {}
+
+    public record EndpointMapConfig(
+        Map<String, Endpoint> endpoints
+    ) implements Loadable {}
+
+    // =========================================================================
+    // saveDefault with optional fields (no @Default* annotation)
+    // =========================================================================
+
+    public record OptionalOnlyConfig(
+        @DefaultString("required")  String required,
+        @Options(optional = true)   String neverDefault
+    ) implements Loadable {}
 }
