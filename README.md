@@ -13,9 +13,10 @@
 - 🔄 **Enum integration**: Special support for configuration enums
 - 🎭 **Polymorphic interfaces**: Automatic type resolution based on YAML keys for plugin systems (with inline discriminator support)
 - 📖 **Custom readers**: TypeToken-based custom type conversion for external libraries (Adventure API, etc.)
+- ✍️ **YAML serialization**: Write records back to YAML with the optional `structura-writer` module (full read/write round-trips)
 - 🔀 **Automatic type conversion**: Smart conversion between compatible types
 - 🎨 **Kebab-case mapping**: Automatic camelCase ↔ kebab-case field name conversion
-- ⚡ **Zero dependencies**: Only optional SnakeYAML for YAML parsing
+- 📦 **Modular**: Split into `structura-core`, `structura-writer`, and a `structura-bom`; SnakeYAML is the only runtime dependency
 
 ## 🚀 Quick Start
 
@@ -438,6 +439,35 @@ storage:
   region: us-east-1
 ```
 
+**Discriminator as the YAML Key**
+
+With `useKey = true`, the discriminator value itself becomes the YAML key instead of being written as a separate field. This produces a more compact structure, especially for collections and maps:
+
+```java
+@Polymorphic(key = "type", useKey = true)
+public interface ItemMeta extends Loadable {}
+```
+
+For a single field, the discriminator value replaces the field name as the key:
+
+```yaml
+trim:                # "trim" is the discriminator value
+  material: DIAMOND
+  pattern: VEX
+```
+
+For a `List<ItemMeta>`, the list is serialized as a map keyed by discriminator value:
+
+```yaml
+metadata:
+  food:              # "food" is the discriminator value
+    nutrition: 8
+  potion:            # "potion" is the discriminator value
+    color: "#FF0000"
+```
+
+For a `Map<String, ItemMeta>`, the existing map key doubles as the discriminator value (no redundant `type` field is written).
+
 **Other Advanced Features**:
 
 - **Custom key names**: Use `@Polymorphic(key = "provider")` for different field names
@@ -709,6 +739,87 @@ public record GameConfig(
 
 If the `arena` key is absent from YAML, the string `"default-arena"` is used as the reference key.
 
+### Writing Configuration (Serialization) ✍️
+
+**NEW in 2.0!** Structura can serialize records **back to YAML**, enabling full read/write round-trips. This lives in the optional `structura-writer` module — add it to your dependencies (see [Installation](#installation)) to unlock `Structura.write()` and `Structura.saveDefault()`.
+
+> If the `structura-writer` module is not on the classpath, calling these methods throws a `StructuraException` explaining how to add it. The core module stays write-free.
+
+#### Writing a record to a file
+
+`Structura.write(Path, Loadable)` serializes any `Loadable` record to YAML and writes it to disk. Parent directories are created automatically, and the file is overwritten if it already exists.
+
+```java
+import fr.traqueur.structura.api.Structura;
+
+AppConfig config = new AppConfig("MyApp", 9000, true, database);
+
+Structura.write(Path.of("plugins/myplugin/config.yml"), config);
+```
+
+A typical round-trip — load, modify, save:
+
+```java
+AppConfig config = Structura.load(path, AppConfig.class);
+
+// Records are immutable, so build an updated copy
+AppConfig updated = new AppConfig(
+    config.appName(),
+    config.port(),
+    true,                  // enable debug
+    config.database()
+);
+
+Structura.write(path, updated);
+```
+
+#### Generating default config files
+
+`Structura.saveDefault(Path, Class)` builds an instance from a record's `@Default*` annotations (and zero-values for unannotated fields), then writes it. Perfect for generating a starter config on first run.
+
+```java
+// Generate config.yml from the defaults declared on AppConfig
+if (!Files.exists(configFile)) {
+    Structura.saveDefault(configFile, AppConfig.class);
+}
+```
+
+> **Note:** `saveDefault()` does not check whether the file already exists — guard it yourself as shown above. It also cannot pick a concrete type for **polymorphic** interface fields (there is no default implementation to choose). For configs containing polymorphic fields, build an explicit default instance and use `write()` instead:
+>
+> ```java
+> StorageConfig defaultStorage = new StorageConfig(new LocalBackend("./data", 100));
+> Structura.write(storageFile, defaultStorage);
+> ```
+
+#### What the serializer handles
+
+The writer is symmetric with the reader — it understands the same feature set:
+
+- camelCase → kebab-case key conversion (and `@Options(name = "...")` overrides)
+- `@Options(inline = true)` — flattens a sub-record's fields into the parent map
+- `@Options(optional = true)` — null fields are silently omitted (not written as `null`)
+- `@Options(isKey = true)` — both simple (key becomes the map key) and complex (key sub-record flattened)
+- `@Polymorphic` in all modes — standard, `inline = true`, fully inline, and `useKey = true`
+- `LocalDate` / `LocalDateTime` — written as ISO-8601 strings
+- Enums — constant name converted to kebab-case
+- `Reference<T>` — serialized back to its key string
+- Lists, Sets, and Maps of any of the above
+
+#### Custom Writers
+
+For types the serializer doesn't know natively (e.g. Adventure's `Component`), register a `Writer<T>` — the symmetric counterpart to a custom reader:
+
+```java
+import fr.traqueur.structura.writers.registries.CustomWriterRegistry;
+
+CustomWriterRegistry.getInstance().register(
+    Component.class,
+    component -> MiniMessage.miniMessage().serialize(component)
+);
+```
+
+A `Writer<T>` converts a Java value to its YAML-serializable form (a String, Number, Map, List, etc.). Pair it with a matching `CustomReaderRegistry` entry to keep your custom type fully round-trippable.
+
 ### Optional Fields
 
 Mark fields as optional to avoid exceptions when missing:
@@ -934,6 +1045,14 @@ fallback-providers:
 
 // Load enum from resources
 <E extends Enum<E> & Loadable> void loadEnumFromResource(String resourcePath, Class<E> enumClass)
+
+// --- Writing (requires the structura-writer module) ---
+
+// Serialize a record to YAML and write it (creates parent dirs, overwrites)
+void write(Path file, Loadable config)
+
+// Build a default instance from @Default* annotations and write it
+<T extends Loadable> void saveDefault(Path file, Class<T> configClass)
 ```
 
 ### Polymorphic Registry API
@@ -977,6 +1096,24 @@ void clear()
 int size()
 ```
 
+### Custom Writer Registry API
+
+> Provided by the `structura-writer` module.
+
+```java
+CustomWriterRegistry registry = CustomWriterRegistry.getInstance();
+
+// Register a writer for a type
+<T> void register(Class<T> type, Writer<T> writer)
+
+// Check / remove
+boolean hasWriter(Class<?> type)
+boolean unregister(Class<?> type)
+
+// Utility
+void clear()
+```
+
 ### TypeToken API
 
 ```java
@@ -1001,8 +1138,10 @@ Class<? super T> getRawType()
 ```java
 @Polymorphic(
         key = "type",      // Default: "type" - discriminator field name
-        inline = false     // Default: false - discriminator inside field value
+        inline = false,    // Default: false - discriminator inside field value
                           // Set to true to place discriminator at parent level
+        useKey = false     // Default: false - when true, the discriminator value
+                          // becomes the YAML key instead of a separate field
 )
 ```
 
@@ -1066,5 +1205,5 @@ Structura is extensively tested with JUnit 5. Run tests with:
 ## 📋 Requirements
 
 - Java 21 or higher
-- Gradle 8.10 or higher
-- SnakeYAML 2.4 (for YAML parsing)
+- Gradle 8.10 or higher (the project builds with the Gradle 9.5.1 wrapper)
+- SnakeYAML 2.6 (pulled in transitively for YAML parsing)
