@@ -24,13 +24,27 @@
 Add Structura to your project:
 
 ```gradle
-repository {
-    maven { url = "https://repo.groupez.dev/releases" } // Add Structura repository replace releases with snapshots if needed
+repositories {
+    maven { url = "https://repo.groupez.dev/releases" } // Add Structura repository, replace releases with snapshots if needed
 }
 
 dependencies {
-    implementation("fr.traqueur:structura:<VERSION>") // Replace <VERSION> with the latest release
-    implementation("org.yaml:snakeyaml:2.4") // Required for YAML parsing
+    // Core (reading YAML). SnakeYAML is pulled in transitively.
+    implementation("fr.traqueur.structura:structura-core:<VERSION>") // Replace <VERSION> with the latest release
+
+    // Optional: reverse serialization (writing records back to YAML)
+    implementation("fr.traqueur.structura:structura-writer:<VERSION>")
+}
+```
+
+Or use the BOM to align module versions:
+
+```gradle
+dependencies {
+    implementation(platform("fr.traqueur.structura:structura-bom:<VERSION>"))
+
+    implementation("fr.traqueur.structura:structura-core")
+    implementation("fr.traqueur.structura:structura-writer")
 }
 ```
 

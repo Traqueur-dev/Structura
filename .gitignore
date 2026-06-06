@@ -6,6 +6,7 @@ build/
 !**/src/test/**/build/
 CLAUDE.md
 target/
+example-configs/
 
 ### IntelliJ IDEA ###
 .idea/modules.xml
