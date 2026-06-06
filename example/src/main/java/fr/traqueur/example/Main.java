@@ -7,7 +7,6 @@ import fr.traqueur.example.config.StorageConfig.S3Backend;
 import fr.traqueur.example.config.StorageConfig.StorageBackend;
 import fr.traqueur.structura.api.Structura;
 import fr.traqueur.structura.registries.PolymorphicRegistry;
-import fr.traqueur.structura.writers.StructuraWriters;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -35,7 +34,7 @@ public class Main {
         Path storageFile = CONFIG_DIR.resolve("storage.yml");
 
         if (!Files.exists(appFile)) {
-            StructuraWriters.saveDefault(appFile, AppConfig.class);
+            Structura.saveDefault(appFile, AppConfig.class);
             System.out.println("Generated: " + appFile);
         } else {
             System.out.println("Already exists: " + appFile);
@@ -44,7 +43,7 @@ public class Main {
         // StorageConfig has a polymorphic field — must use write() with an explicit default
         if (!Files.exists(storageFile)) {
             StorageConfig defaultStorage = new StorageConfig(new LocalBackend("./data", 100));
-            StructuraWriters.write(storageFile, defaultStorage);
+            Structura.write(storageFile, defaultStorage);
             System.out.println("Generated: " + storageFile);
         } else {
             System.out.println("Already exists: " + storageFile);
@@ -71,10 +70,10 @@ public class Main {
 
         System.out.println();
         StorageBackend backend = storageConfig.backend();
-        if (backend instanceof LocalBackend local) {
+        if (backend instanceof LocalBackend(String path, int maxFileSizeMb)) {
             System.out.println("storage type    : local");
-            System.out.println("path            : " + local.path());
-            System.out.println("max-file-size   : " + local.maxFileSizeMb() + " MB");
+            System.out.println("path            : " + path);
+            System.out.println("max-file-size   : " + maxFileSizeMb + " MB");
         } else if (backend instanceof S3Backend s3) {
             System.out.println("storage type    : s3");
             System.out.println("bucket          : " + s3.bucket());
@@ -83,7 +82,7 @@ public class Main {
         }
 
         // ── 4. modify in memory + write() ────────────────────────────────────
-        section("Step 3 — modify + StructuraWriters.write()");
+        section("Step 3 — modify + Structura.write()");
 
         AppConfig updated = new AppConfig(
             appConfig.appName(),
@@ -92,7 +91,7 @@ public class Main {
             appConfig.maxConnections(),
             "admin@example.com"         // set optional field
         );
-        StructuraWriters.write(appFile, updated);
+        Structura.write(appFile, updated);
         System.out.println("Saved updated config (debug=true, admin-email set).");
 
         System.out.println("\nNew contents of app.yml:");
@@ -118,7 +117,7 @@ public class Main {
         StorageConfig s3Config = new StorageConfig(
             new S3Backend("prod-bucket", "us-east-1", "AKIAIOSFODNN7EXAMPLE", "wJalrXUtnFEMI", true)
         );
-        StructuraWriters.write(storageFile, s3Config);
+        Structura.write(storageFile, s3Config);
         System.out.println("Switched to S3. New contents of storage.yml:");
         System.out.println(Files.readString(storageFile).indent(2).stripTrailing());
 

@@ -2,13 +2,10 @@ rootProject.name = "Structura"
 
 pluginManagement {
     repositories {
-        maven {
-            name = "groupezReleases"
-            url = uri("https://repo.groupez.dev/releases")
-        }
         gradlePluginPortal()
     }
 }
 
-include("structura-writers")
+include("writer")
+include("bom")
 include("example")

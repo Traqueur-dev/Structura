@@ -38,7 +38,7 @@ class StructuraWritersTest {
         Path file = tempDir.resolve("config.yml");
         PlainConfig original = new PlainConfig("RoundTrip", 99);
 
-        StructuraWriters.write(file, original);
+        Structura.write(file, original);
         PlainConfig loaded = Structura.load(file, PlainConfig.class);
 
         assertEquals(original.name(), loaded.name());
@@ -48,7 +48,7 @@ class StructuraWritersTest {
     @Test
     void shouldWriteKebabCaseKeys() throws Exception {
         Path file = tempDir.resolve("config.yml");
-        StructuraWriters.write(file, new CamelCaseConfig("srv", 9090));
+        Structura.write(file, new CamelCaseConfig("srv", 9090));
 
         String content = Files.readString(file);
         assertTrue(content.contains("server-name:"));
@@ -58,7 +58,7 @@ class StructuraWritersTest {
     @Test
     void shouldSerializeNestedRecord() throws Exception {
         Path file = tempDir.resolve("nested.yml");
-        StructuraWriters.write(file, new NestedDefaultConfig("MyApp", new ServerBlock("db.local", 5432)));
+        Structura.write(file, new NestedDefaultConfig("MyApp", new ServerBlock("db.local", 5432)));
 
         String content = Files.readString(file);
         assertTrue(content.contains("app-name: MyApp"));
@@ -73,7 +73,7 @@ class StructuraWritersTest {
         Path file = tempDir.resolve("a/b/c/config.yml");
         assertFalse(Files.exists(file.getParent()), "parent must not exist before write");
 
-        StructuraWriters.write(file, new PlainConfig("deep", 1));
+        Structura.write(file, new PlainConfig("deep", 1));
 
         assertTrue(Files.exists(file), "file must be created including parent dirs");
     }
@@ -83,7 +83,7 @@ class StructuraWritersTest {
     @Test
     void saveDefaultShouldGenerateFromAnnotations() throws Exception {
         Path file = tempDir.resolve("default.yml");
-        StructuraWriters.saveDefault(file, SimpleDefaultConfig.class);
+        Structura.saveDefault(file, SimpleDefaultConfig.class);
 
         SimpleDefaultConfig loaded = Structura.load(file, SimpleDefaultConfig.class);
         assertEquals("Afelia", loaded.serverName());
@@ -94,7 +94,7 @@ class StructuraWritersTest {
     @Test
     void saveDefaultOmitsOptionalFieldsWithNoDefault() throws Exception {
         Path file = tempDir.resolve("optional.yml");
-        StructuraWriters.saveDefault(file, OptionalOnlyConfig.class);
+        Structura.saveDefault(file, OptionalOnlyConfig.class);
 
         String content = Files.readString(file);
         assertTrue(content.contains("required:"));
@@ -106,7 +106,7 @@ class StructuraWritersTest {
     @Test
     void polymorphicStandardRoundTrip() throws Exception {
         Path file = tempDir.resolve("animal.yml");
-        StructuraWriters.write(file, new AnimalConfig("Farm", new Dog("Buddy", "poodle")));
+        Structura.write(file, new AnimalConfig("Farm", new Dog("Buddy", "poodle")));
 
         AnimalConfig loaded = Structura.load(file, AnimalConfig.class);
         assertInstanceOf(Dog.class, loaded.pet());
@@ -117,7 +117,7 @@ class StructuraWritersTest {
     @Test
     void polymorphicInlineRoundTrip() throws Exception {
         Path file = tempDir.resolve("db.yml");
-        StructuraWriters.write(file, new InlineDbConfig("App", new MySQLEngine("db.local", 3306)));
+        Structura.write(file, new InlineDbConfig("App", new MySQLEngine("db.local", 3306)));
 
         InlineDbConfig loaded = Structura.load(file, InlineDbConfig.class);
         assertInstanceOf(MySQLEngine.class, loaded.db());

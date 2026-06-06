@@ -12,8 +12,7 @@ repositories {
 
 dependencies {
     implementation(project(":"))
-    implementation(project(":structura-writers"))
-    implementation("org.yaml:snakeyaml:2.4")
+    implementation(project(":writer"))
 }
 
 java {
