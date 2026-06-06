@@ -8,6 +8,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ServiceLoader;
 
 /**
  * Structura is a library for parsing and validating YAML configurations.
@@ -38,6 +39,30 @@ public class Structura {
 
     static {
         Updater.checkUpdates();
+    }
+
+    /**
+     * Lazy, thread-safe holder for the optional {@link StructuraWriter} SPI.
+     * The JVM guarantees that the inner class is initialized only once,
+     * and only when first accessed.
+     */
+    private static final class WriterHolder {
+        static final StructuraWriter INSTANCE = ServiceLoader
+                .load(StructuraWriter.class, Structura.class.getClassLoader())
+                .findFirst()
+                .orElse(null);
+    }
+
+    /** Returns the {@link StructuraWriter} resolved by the SPI, or throws if absent. */
+    private static StructuraWriter requireWriter() {
+        StructuraWriter writer = WriterHolder.INSTANCE;
+        if (writer == null) {
+            throw new StructuraException(
+                    "Structura write operations require the 'structura-writers' module on the classpath. " +
+                    "Add it as a dependency to use Structura.write() or Structura.saveDefault()."
+            );
+        }
+        return writer;
     }
 
     /**
@@ -268,5 +293,48 @@ public class Structura {
         } catch (IOException e) {
             throw new StructuraException("Unable to read file: " + getSourceName(source), e);
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Write API  (requires structura-writers on the classpath)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Serializes {@code config} to YAML and writes it to {@code file}.
+     * Creates the file if it does not exist, overwrites it otherwise.
+     *
+     * <p>Requires the {@code structura-writers} module to be present on the classpath.
+     * Throws {@link StructuraException} if the module is absent.</p>
+     *
+     * @param file   destination path
+     * @param config the {@link Loadable} record to serialize
+     * @throws StructuraException if the writers module is absent or the write fails
+     */
+    public static void write(Path file, Loadable config) {
+        requireWriter().write(file, config);
+    }
+
+    /**
+     * Builds a default instance of {@code configClass} from its {@code @Default*} annotations,
+     * then writes it to {@code file}.
+     *
+     * <p>Does <em>not</em> check whether {@code file} already exists —
+     * that responsibility belongs to the caller:</p>
+     * <pre>
+     * if (!Files.exists(configFile)) {
+     *     Structura.saveDefault(configFile, MyConfig.class);
+     * }
+     * </pre>
+     *
+     * <p>Requires the {@code structura-writers} module to be present on the classpath.
+     * Throws {@link StructuraException} if the module is absent.</p>
+     *
+     * @param file        destination path
+     * @param configClass the record class to instantiate with default values
+     * @param <T>         a record type implementing {@link Loadable}
+     * @throws StructuraException if the writers module is absent or the write fails
+     */
+    public static <T extends Loadable> void saveDefault(Path file, Class<T> configClass) {
+        requireWriter().saveDefault(file, configClass);
     }
 }

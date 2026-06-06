@@ -9,3 +9,6 @@ pluginManagement {
         gradlePluginPortal()
     }
 }
+
+include("structura-writers")
+include("example")
