@@ -11,5 +11,4 @@ pluginManagement {
 }
 
 include("structura-writers")
-include("McTest")
 include("example")
