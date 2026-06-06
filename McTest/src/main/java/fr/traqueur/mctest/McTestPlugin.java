@@ -60,21 +60,46 @@ public final class McTestPlugin extends JavaPlugin {
     private void loadConfigs() {
         Path folder = getDataFolder().toPath();
 
-        mainConfig     = loadOrDefault(folder.resolve("config.yml"),   MainConfig.class);
-        databaseConfig = loadOrDefault(folder.resolve("database.yml"), DatabaseConfig.class);
-        rewardsConfig  = loadOrDefault(folder.resolve("rewards.yml"),  RewardsConfig.class);
+        // MainConfig: all fields have @Default* — saveDefault() works fine
+        mainConfig = loadOrSaveDefault(folder.resolve("config.yml"), MainConfig.class);
+
+        // DatabaseConfig: driver field is a polymorphic interface — we must provide a concrete
+        // default instance explicitly (saveDefault cannot pick a concrete type on its own)
+        databaseConfig = loadOrWrite(folder.resolve("database.yml"), databaseConfig,
+                new DatabaseConfig(new DatabaseConfig.MySQLDriver("localhost", 3306, "mctest", "root", "", 10)));
+
+        // RewardsConfig: list fields have no @Default* — same issue, provide explicit defaults
+        rewardsConfig = loadOrWrite(folder.resolve("rewards.yml"), rewardsConfig,
+                new RewardsConfig(
+                        List.of(new RewardsConfig.ItemReward("DIAMOND", 1),
+                                new RewardsConfig.MoneyReward(500.0)),
+                        List.of(new RewardsConfig.ItemReward("NETHERITE_INGOT", 1),
+                                new RewardsConfig.CommandReward("give %player% golden_apple 5", "Enjoy!"))));
     }
 
     /**
-     * Loads a config file if it exists, otherwise generates it from @Default* annotations.
-     * This is the standard Structura pattern for plugin startup.
+     * Loads a config whose every field has a {@code @Default*} annotation.
+     * Generates the file from annotations on first run.
      */
-    private <T extends fr.traqueur.structura.api.Loadable> T loadOrDefault(Path file, Class<T> type) {
+    private <T extends fr.traqueur.structura.api.Loadable> T loadOrSaveDefault(Path file, Class<T> type) {
         if (!Files.exists(file)) {
             getLogger().info("Generating default " + file.getFileName() + " ...");
             StructuraWriters.saveDefault(file, type);
         }
         return Structura.load(file, type);
+    }
+
+    /**
+     * Loads a config that contains polymorphic or unannotated fields.
+     * Uses {@code fallback} as the written default when the file doesn't exist yet.
+     */
+    @SuppressWarnings("unchecked")
+    private <T extends fr.traqueur.structura.api.Loadable> T loadOrWrite(Path file, T current, T fallback) {
+        if (!Files.exists(file)) {
+            getLogger().info("Generating default " + file.getFileName() + " ...");
+            StructuraWriters.write(file, fallback);
+        }
+        return Structura.load(file, (Class<T>) fallback.getClass());
     }
 
     // -------------------------------------------------------------------------
