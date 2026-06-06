@@ -25,13 +25,14 @@ import java.util.stream.Collectors;
 /**
  * Serializes a {@link Loadable} record to a YAML string.
  *
- * <p>Handles:</p>
+ * <p>Supports the full symmetric set of features that the Structura reader understands:</p>
  * <ul>
  *   <li>camelCase → kebab-case key conversion</li>
  *   <li>{@code @Options(inline = true)} — flattens a sub-record's fields into the parent map</li>
  *   <li>{@code @Options(optional = true)} — null fields are silently omitted</li>
  *   <li>{@code @Options(name = "...")} — overrides the YAML key for a field</li>
- *   <li>{@code @Options(isKey = true)} — record field used as map key in List and Map values</li>
+ *   <li>{@code @Options(isKey = true)} simple — record serialized as {@code {keyValue: {otherFields}}}</li>
+ *   <li>{@code @Options(isKey = true)} complex — key sub-record's fields flattened at same level</li>
  *   <li>{@code @Polymorphic} standard — discriminator written <em>inside</em> the nested map</li>
  *   <li>{@code @Polymorphic(inline = true)} — discriminator written at the <em>parent</em> level</li>
  *   <li>{@code @Polymorphic(inline = true)} + {@code @Options(inline = true)} — fully inline:
@@ -72,6 +73,12 @@ public class LoadableSerializer {
     // Core record → Map conversion
     // -------------------------------------------------------------------------
 
+    /**
+     * Converts any record to a {@code Map<String, Object>} that SnakeYAML can dump.
+     *
+     * <p>When the record has a component marked {@code @Options(isKey = true)}, delegates to
+     * {@link #toMapWithKeyComponent} which handles both simple-key and complex-key variants.</p>
+     */
     private Map<String, Object> toMap(Object obj) {
         Class<?> clazz = obj.getClass();
         if (!clazz.isRecord()) {
@@ -82,6 +89,11 @@ public class LoadableSerializer {
         Constructor<?>    constructor = clazz.getDeclaredConstructors()[0];
         Parameter[]       parameters  = constructor.getParameters();
 
+        RecordComponent keyComponent = fieldMapper.findKeyComponent(components);
+        if (keyComponent != null) {
+            return toMapWithKeyComponent(obj, components, parameters, keyComponent);
+        }
+
         Map<String, Object> result = new LinkedHashMap<>();
         for (int i = 0; i < components.length; i++) {
             contributeToMap(result, components[i], parameters[i], readField(components[i], obj));
@@ -89,10 +101,67 @@ public class LoadableSerializer {
         return result;
     }
 
+    /**
+     * Serializes a record that has a component marked {@code @Options(isKey = true)}.
+     *
+     * <ul>
+     *   <li><b>Simple key</b> (String / primitive): returns {@code {keyValue: {otherFields}}}</li>
+     *   <li><b>Complex key</b> (record type): flattens the key sub-record's fields alongside the
+     *       other fields at the same level</li>
+     * </ul>
+     */
+    private Map<String, Object> toMapWithKeyComponent(Object obj, RecordComponent[] components,
+                                                       Parameter[] parameters,
+                                                       RecordComponent keyComponent) {
+        Class<?> keyType = keyComponent.getType();
+
+        if (keyType.isRecord()) {
+            // Complex key: flatten key-record fields alongside other fields
+            Map<String, Object> result = new LinkedHashMap<>();
+            for (int i = 0; i < components.length; i++) {
+                RecordComponent comp  = components[i];
+                Object          value = readField(comp, obj);
+                if (comp.getName().equals(keyComponent.getName())) {
+                    if (value != null) result.putAll(toMap(value));
+                } else {
+                    contributeToMap(result, comp, parameters[i], value);
+                }
+            }
+            return result;
+        }
+
+        // Simple key: { keyValue → { otherFields } }
+        Object              keyValue    = readField(keyComponent, obj);
+        Map<String, Object> otherFields = new LinkedHashMap<>();
+        int                 keyIdx      = findComponentIndex(components, keyComponent);
+        for (int i = 0; i < components.length; i++) {
+            if (i != keyIdx) {
+                contributeToMap(otherFields, components[i], parameters[i], readField(components[i], obj));
+            }
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put(keyValue != null ? keyValue.toString() : "", otherFields.isEmpty() ? null : otherFields);
+        return result;
+    }
+
     // -------------------------------------------------------------------------
     // Per-field contribution
     // -------------------------------------------------------------------------
 
+    /**
+     * Adds the serialized representation of a single record component to {@code result}.
+     *
+     * <p>Dispatch (in priority order):</p>
+     * <ol>
+     *   <li>{@code @Options(inline=true)} + concrete Loadable record → flatten sub-fields</li>
+     *   <li>{@code @Options(inline=true)} + {@code @Polymorphic(inline=true)} → fully inline</li>
+     *   <li>{@code @Polymorphic(useKey=true)} → discriminator value becomes the YAML key</li>
+     *   <li>{@code @Polymorphic(inline=true)} → discriminator at parent, fields under key</li>
+     *   <li>{@code @Polymorphic} standard → discriminator inside nested map</li>
+     *   <li>Everything else → normal key/value</li>
+     * </ol>
+     */
     private void contributeToMap(Map<String, Object> result, RecordComponent component,
                                   Parameter parameter, Object value) {
         Options  opts     = parameter.getAnnotation(Options.class);
@@ -108,9 +177,9 @@ public class LoadableSerializer {
             return;
         }
 
+        // ── @Options(inline = true) ──────────────────────────────────────────
         if (isInline) {
             if (type.isRecord() && Loadable.class.isAssignableFrom(type)) {
-                // Flatten sub-record fields at parent level
                 result.putAll(toMap(value));
             } else if (isPolymorphicInterface(type)) {
                 Polymorphic poly = type.getAnnotation(Polymorphic.class);
@@ -127,12 +196,13 @@ public class LoadableSerializer {
             return;
         }
 
+        // ── Polymorphic interface ────────────────────────────────────────────
         if (isPolymorphicInterface(type)) {
             Polymorphic poly      = type.getAnnotation(Polymorphic.class);
             String      discValue = lookupRegisteredName(value.getClass(), type);
 
             if (poly.useKey()) {
-                // useKey: discriminator value becomes the YAML key; field name is dropped
+                // Discriminator value becomes the YAML key; field name is dropped
                 result.put(discValue, toMap(value));
             } else if (poly.inline()) {
                 // Discriminator at parent level, concrete fields nested under key
@@ -179,40 +249,53 @@ public class LoadableSerializer {
         return value;
     }
 
+    /**
+     * Serializes a {@code List} or (flattened) {@code Set}.
+     *
+     * <ul>
+     *   <li>{@code @Polymorphic(useKey=true)} elements → map keyed by registered name</li>
+     *   <li>{@code @Options(isKey=true)} record elements → {@code toMap()} already wraps each
+     *       element as {@code {keyValue: {otherFields}}}; results are merged into one map</li>
+     *   <li>Standard polymorphic elements → list with discriminator inside each entry</li>
+     *   <li>Otherwise → plain list</li>
+     * </ul>
+     */
     private Object serializeCollection(List<?> elements, Type elementGenericType) {
         if (elements.isEmpty()) return new ArrayList<>();
 
         Class<?> elementRawType = getRawClass(elementGenericType);
 
-        // isKey records: list becomes a YAML map keyed by the @Options(isKey=true) field value
+        // useKey polymorphic list → map { registeredName: { fields } }
+        if (isPolymorphicWithUseKey(elementRawType)) {
+            Map<String, Object> resultMap = new LinkedHashMap<>();
+            for (Object elem : elements) {
+                resultMap.put(lookupRegisteredName(elem.getClass(), elementRawType), toMap(elem));
+            }
+            return resultMap;
+        }
+
+        // isKey record list
         if (elementRawType.isRecord()) {
             RecordComponent keyComp = fieldMapper.findKeyComponent(elementRawType.getRecordComponents());
             if (keyComp != null) {
+                if (keyComp.getType().isRecord()) {
+                    // Complex key: toMap() flattens the key sub-record; serialize as a YAML list
+                    return elements.stream()
+                            .map(e -> toMap(e))
+                            .collect(Collectors.toList());
+                }
+                // Simple key: toMap() returns { keyValue: { otherFields } }; merge into one map
                 Map<String, Object> resultMap = new LinkedHashMap<>();
                 for (Object elem : elements) {
-                    Object   keyValue   = readField(keyComp, elem);
-                    String   mapKey     = keyValue == null ? "null" : keyValue.toString();
-                    Map<String, Object> fields = toMap(elem);
-                    fields.remove(fieldMapper.convertCamelCaseToKebabCase(keyComp.getName()));
-                    resultMap.put(mapKey, fields);
+                    resultMap.putAll(toMap(elem));
                 }
                 return resultMap;
             }
         }
 
-        // Polymorphic list: discriminator inside each element map
+        // Standard polymorphic list → list with discriminator inside each entry
         if (isPolymorphicInterface(elementRawType)) {
-            Polymorphic poly = elementRawType.getAnnotation(Polymorphic.class);
-
-            if (poly.useKey()) {
-                // useKey list: becomes a YAML map — discriminator value is the key
-                Map<String, Object> resultMap = new LinkedHashMap<>();
-                for (Object elem : elements) {
-                    resultMap.put(lookupRegisteredName(elem.getClass(), elementRawType), toMap(elem));
-                }
-                return resultMap;
-            }
-
+            Polymorphic  poly       = elementRawType.getAnnotation(Polymorphic.class);
             List<Object> resultList = new ArrayList<>();
             for (Object elem : elements) {
                 Map<String, Object> entry = new LinkedHashMap<>();
@@ -228,41 +311,53 @@ public class LoadableSerializer {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * Serializes a {@code Map}.
+     *
+     * <ul>
+     *   <li>{@code @Polymorphic(useKey=true)} values → outer key is the discriminator,
+     *       just write concrete fields (no extra discriminator key)</li>
+     *   <li>{@code @Options(isKey=true)} record values → {@code toMap()} wraps as
+     *       {@code {keyValue: {otherFields}}}; extract the value so the outer map key is kept</li>
+     *   <li>Standard polymorphic values → discriminator inside each value map</li>
+     *   <li>Otherwise → normal map</li>
+     * </ul>
+     */
     private Object serializeMap(Map<?, ?> map, Type[] typeArgs) {
         Type     valueGenericType = typeArgs.length > 1 ? typeArgs[1] : Object.class;
         Class<?> valueRawType     = getRawClass(valueGenericType);
 
         Map<String, Object> result = new LinkedHashMap<>();
 
-        // isKey records as map values: strip the key component from each nested map
-        if (valueRawType.isRecord()) {
-            RecordComponent keyComp = fieldMapper.findKeyComponent(valueRawType.getRecordComponents());
-            if (keyComp != null) {
-                String keyField = fieldMapper.convertCamelCaseToKebabCase(keyComp.getName());
-                for (Map.Entry<?, ?> e : map.entrySet()) {
-                    if (e.getValue() == null) { result.put(e.getKey().toString(), null); continue; }
-                    Map<String, Object> fields = toMap(e.getValue());
-                    fields.remove(keyField);
-                    result.put(e.getKey().toString(), fields);
-                }
-                return result;
+        // useKey map: outer key IS the discriminator — write concrete fields only
+        if (isPolymorphicWithUseKey(valueRawType)) {
+            for (Map.Entry<?, ?> e : map.entrySet()) {
+                result.put(e.getKey().toString(), e.getValue() != null ? toMap(e.getValue()) : null);
             }
+            return result;
         }
 
-        // Polymorphic map values: discriminator inside each value
+        // isKey record values: toMap() wraps as { keyValue: { otherFields } };
+        // the outer map key is already provided, so we extract the inner value
+        if (valueRawType.isRecord()
+                && fieldMapper.findKeyComponent(valueRawType.getRecordComponents()) != null) {
+            for (Map.Entry<?, ?> e : map.entrySet()) {
+                if (e.getValue() == null) { result.put(e.getKey().toString(), null); continue; }
+                Map<String, Object> wrapped = toMap(e.getValue());
+                result.put(e.getKey().toString(), wrapped.values().iterator().next());
+            }
+            return result;
+        }
+
+        // Standard polymorphic map values: discriminator inside each value
         if (isPolymorphicInterface(valueRawType)) {
             Polymorphic poly = valueRawType.getAnnotation(Polymorphic.class);
             for (Map.Entry<?, ?> e : map.entrySet()) {
                 if (e.getValue() == null) { result.put(e.getKey().toString(), null); continue; }
-                if (poly.useKey()) {
-                    // useKey map: the map key IS the discriminator — just write concrete fields
-                    result.put(e.getKey().toString(), toMap(e.getValue()));
-                } else {
-                    Map<String, Object> valueMap = new LinkedHashMap<>();
-                    valueMap.put(poly.key(), lookupRegisteredName(e.getValue().getClass(), valueRawType));
-                    valueMap.putAll(toMap(e.getValue()));
-                    result.put(e.getKey().toString(), valueMap);
-                }
+                Map<String, Object> valueMap = new LinkedHashMap<>();
+                valueMap.put(poly.key(), lookupRegisteredName(e.getValue().getClass(), valueRawType));
+                valueMap.putAll(toMap(e.getValue()));
+                result.put(e.getKey().toString(), valueMap);
             }
             return result;
         }
@@ -290,7 +385,9 @@ public class LoadableSerializer {
         }
         throw new StructuraWriterException(
                 "No registered name for '" + concreteClass.getName() +
-                "' in polymorphic registry of '" + polymorphicInterface.getName() + "'"
+                "' in polymorphic registry of '" + polymorphicInterface.getName() + "'. " +
+                "Register it via PolymorphicRegistry.get(" + polymorphicInterface.getSimpleName() +
+                ".class).register(\"name\", " + concreteClass.getSimpleName() + ".class)"
         );
     }
 
@@ -302,6 +399,10 @@ public class LoadableSerializer {
         return type.isInterface()
                 && Loadable.class.isAssignableFrom(type)
                 && type.isAnnotationPresent(Polymorphic.class);
+    }
+
+    private boolean isPolymorphicWithUseKey(Class<?> type) {
+        return isPolymorphicInterface(type) && type.getAnnotation(Polymorphic.class).useKey();
     }
 
     private Class<?> getRawClass(Type type) {
@@ -319,5 +420,11 @@ public class LoadableSerializer {
             throw new StructuraWriterException("Cannot read field: " + component.getName(), e);
         }
     }
-}
 
+    private int findComponentIndex(RecordComponent[] components, RecordComponent target) {
+        for (int i = 0; i < components.length; i++) {
+            if (components[i].getName().equals(target.getName())) return i;
+        }
+        return -1;
+    }
+}

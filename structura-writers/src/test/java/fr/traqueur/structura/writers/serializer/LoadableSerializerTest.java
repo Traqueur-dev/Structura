@@ -240,6 +240,40 @@ class LoadableSerializerTest {
     }
 
     @Test
+    void isKeyComplexKeyRecordFlattensSubRecordFields() {
+        String yaml = serializer.toYaml(new ComplexKeyEntry(
+            new ServerCoordinates("db.example.com", 5432), "primary", true
+        ));
+
+        assertTrue(yaml.contains("host: db.example.com"), "host must be at root level");
+        assertTrue(yaml.contains("port: 5432"),           "port must be at root level");
+        assertTrue(yaml.contains("label: primary"));
+        assertTrue(yaml.contains("active: true"));
+        assertFalse(yaml.contains("coords:"), "coords field name must not appear when flattened");
+    }
+
+    @Test
+    void isKeyComplexKeyListProducesYamlListWithFlattenedFields() {
+        String yaml = serializer.toYaml(new ComplexKeyListConfig(List.of(
+            new ComplexKeyEntry(new ServerCoordinates("primary.db", 5432), "primary", true),
+            new ComplexKeyEntry(new ServerCoordinates("replica.db", 5433), "replica", false)
+        )));
+
+        // Each entry is a YAML list item with the key sub-record flattened at item level
+        assertTrue(yaml.contains("host: primary.db"));
+        assertTrue(yaml.contains("host: replica.db"));
+        assertTrue(yaml.contains("port: 5432"));
+        assertTrue(yaml.contains("port: 5433"));
+        assertTrue(yaml.contains("label: primary"));
+        assertTrue(yaml.contains("label: replica"));
+        // coords key must not appear (sub-record is flattened)
+        assertFalse(yaml.contains("coords:"));
+        // Must be a list (dashes), not a map — complex keys cannot act as unique map keys
+        assertTrue(yaml.contains("- host:") || yaml.contains("-\n") || yaml.contains("- "),
+                   "output must be a YAML list, not a map");
+    }
+
+    @Test
     void isKeyInsideMapValueStripsKeyField() {
         String yaml = serializer.toYaml(new EndpointMapConfig(Map.of(
             "/health", new Endpoint("/health", "GET", 200),

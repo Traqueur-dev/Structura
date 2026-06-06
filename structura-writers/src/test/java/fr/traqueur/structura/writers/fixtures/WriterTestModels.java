@@ -180,7 +180,7 @@ public final class WriterTestModels {
     ) implements Loadable {}
 
     // =========================================================================
-    // @Options(isKey = true) — record field as map key in collections
+    // @Options(isKey = true) simple — String/primitive key
     // =========================================================================
 
     /** Record where 'id' is the map key when serialized inside a collection. */
@@ -204,6 +204,27 @@ public final class WriterTestModels {
 
     public record RouteConfig(
         List<Route> routes
+    ) implements Loadable {}
+
+    // =========================================================================
+    // @Options(isKey = true) complex — record type as key (fields flattened)
+    // =========================================================================
+
+    /** Sub-record used as a complex key — its fields are flattened at the same level. */
+    public record ServerCoordinates(
+        @DefaultString("localhost") String host,
+        @DefaultInt(8080)           int    port
+    ) implements Loadable {}
+
+    /** Record whose key component is itself a record — coords fields are flattened. */
+    public record ComplexKeyEntry(
+        @Options(isKey = true) ServerCoordinates coords,
+        @DefaultString("default")                String  label,
+        @DefaultBool(false)                       boolean active
+    ) implements Loadable {}
+
+    public record ComplexKeyListConfig(
+        List<ComplexKeyEntry> entries
     ) implements Loadable {}
 
     // =========================================================================
