@@ -7,7 +7,7 @@
 - 🎯 **Type-safe**: Compile-time safety with Java records
 - 🔧 **Annotation-driven**: Flexible configuration with `@Options` and default value annotations
 - 🔑 **Key-based mapping**: Flexible YAML structures with `@Options(isKey = true)` for both simple and complex object flattening
-- 📦 **Inline fields**: Flatten nested record fields with `@Options(inline = true)` for cleaner YAML structure
+- 📦 **Inline fields**: Flatten nested record fields with `@Options(inline = true)` for cleaner YAML structure — on a `Map`, it becomes the catch-all of its node and absorbs every unclaimed key
 - 🏗️ **Nested configurations**: Support for complex, hierarchical settings
 - 📋 **Collections support**: Lists, Sets, and Maps with generic type safety
 - 🔄 **Enum integration**: Special support for configuration enums
@@ -218,6 +218,32 @@ database:                # database is nested
   port: 5432
   database: app_db
 ```
+
+#### Catch-all maps
+
+`@Options(inline = true)` on a `Map` turns it into the **catch-all of its node**: it absorbs every key that no sibling component claims. A component with free-form keys therefore no longer needs an envelope key of its own.
+
+```java
+public record Greeting(
+    @Options(optional = true) String comment,
+    @Options(inline = true) Map<String, String> byLocale
+) implements Loadable {}
+```
+
+```yaml
+comment: "greeting shown on join"   # the declared component
+fr_FR: "Bienvenue"                  # ─┐
+en_US: "Welcome"                    # ─┴ byLocale
+```
+
+A sibling claims its **effective** name, so `@Options(name = "...")` is honoured — rename `comment` to `note` and `comment` becomes an ordinary data key for the map. The computation is recursive: an inline sibling record reads its own fields at that same level, so those names are claimed too.
+
+Values go through the map's generic value type, exactly as anywhere else, so `Map<String, List<String>>` and `Map<String, SomeRecord>` both work. A catch-all map is **never null**: with nothing left to absorb it is simply empty. It can be declared anywhere in the record.
+
+Two shapes are **rejected at load time**, because they would produce a wrong but plausible result:
+
+- **two inline maps in the same record** — nothing says how to split the remaining keys between them;
+- **an inline map next to a fully inline polymorphic field** (`@Options(inline = true)` + `@Polymorphic(inline = true)`) — the keys of that field are only known once its discriminator has been read, so the map would silently swallow them.
 
 ### Key-based Mapping
 
@@ -809,6 +835,7 @@ The writer is symmetric with the reader — it understands the same feature set:
 
 - camelCase → kebab-case key conversion (and `@Options(name = "...")` overrides)
 - `@Options(inline = true)` — flattens a sub-record's fields into the parent map
+- `@Options(inline = true)` on a `Map` — catch-all map: entries are written at the parent level, the field name is dropped
 - `@Options(optional = true)` — null fields are silently omitted (not written as `null`)
 - `@Options(isKey = true)` — both simple (key becomes the map key) and complex (key sub-record flattened)
 - `@Polymorphic` in all modes — standard, `inline = true`, fully inline, and `useKey = true`
@@ -1169,7 +1196,8 @@ Class<? super T> getRawType()
         name = "custom-field-name",    // Override field name
         optional = true,               // Mark as optional
         isKey = true,                  // Use for key-based mapping
-        inline = false                 // Default: false - flatten record fields to parent level
+        inline = false                 // Default: false - flatten record fields to parent level;
+                                       // on a Map, absorb every key no sibling claims
 )
 ```
 

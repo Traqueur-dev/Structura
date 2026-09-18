@@ -161,6 +161,24 @@ class LoadableSerializerTest {
         assertTrue(yaml.contains("kind: cat"));
     }
 
+    @Test
+    void inlineCatchAllMapEntriesAreWrittenAtParentLevel() {
+        String yaml = serializer.toYaml(
+                new CatchAllMapConfig("hello", Map.of("fr-FR", "Bienvenue")));
+
+        assertTrue(yaml.contains("comment: hello"));
+        assertTrue(yaml.contains("fr-FR: Bienvenue"), "catch-all entry must sit at the parent level");
+        assertFalse(yaml.contains("by-locale:"), "'by-locale' key must not appear when inline");
+    }
+
+    @Test
+    void emptyInlineCatchAllMapWritesNoKey() {
+        String yaml = serializer.toYaml(new CatchAllMapConfig("hello", Map.of()));
+
+        assertTrue(yaml.contains("comment: hello"));
+        assertFalse(yaml.contains("by-locale"), "an empty catch-all map must write nothing at all");
+    }
+
     // ── @Polymorphic(inline = true) ───────────────────────────────────────────
 
     @Test
