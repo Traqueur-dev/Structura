@@ -66,6 +66,23 @@ class StructuraWritersTest {
         assertTrue(content.contains("host: db.local"));
     }
 
+    @Test
+    void shouldRoundTripInlineCatchAllMap() throws Exception {
+        Path file = tempDir.resolve("catch-all.yml");
+        CatchAllMapConfig original = new CatchAllMapConfig(
+                "greeting", Map.of("fr-FR", "Bienvenue", "en-US", "Welcome"));
+
+        Structura.write(file, original);
+
+        String content = Files.readString(file);
+        assertFalse(content.contains("by-locale"), "the field name must not appear in the file");
+        assertTrue(content.contains("fr-FR: Bienvenue"));
+
+        CatchAllMapConfig loaded = Structura.load(file, CatchAllMapConfig.class);
+        assertEquals(original.comment(), loaded.comment());
+        assertEquals(original.byLocale(), loaded.byLocale());
+    }
+
     // ── Parent directory creation ─────────────────────────────────────────────
 
     @Test

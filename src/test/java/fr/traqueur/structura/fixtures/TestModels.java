@@ -211,6 +211,52 @@ public final class TestModels {
         @Options(inline = true) String value  // String is not a record
     ) implements Loadable {}
 
+    // ==================== Inline Catch-All Maps ====================
+
+    public record Greeting(
+        @Options(optional = true) String comment,
+        @Options(inline = true) Map<String, String> byLocale
+    ) implements Loadable {}
+
+    public record OnlyCatchAllMap(
+        @Options(inline = true) Map<String, String> entries
+    ) implements Loadable {}
+
+    public record RenamedSiblingCatchAll(
+        @Options(name = "note") String comment,
+        @Options(inline = true) Map<String, String> byLocale
+    ) implements Loadable {}
+
+    public record ListValuedCatchAll(
+        String title,
+        @Options(inline = true) Map<String, List<String>> groups
+    ) implements Loadable {}
+
+    public record CatchAllEntry(
+        String label,
+        @DefaultInt(1) int weight
+    ) implements Loadable {}
+
+    public record RecordValuedCatchAll(
+        String title,
+        @Options(inline = true) Map<String, CatchAllEntry> entries
+    ) implements Loadable {}
+
+    public record CatchAllWithInlineRecord(
+        @Options(inline = true) ConnectionInfo connection,
+        @Options(inline = true) Map<String, String> extras
+    ) implements Loadable {}
+
+    public record TwoCatchAllMaps(
+        @Options(inline = true) Map<String, String> first,
+        @Options(inline = true) Map<String, String> second
+    ) implements Loadable {}
+
+    public record CatchAllNextToFullyInlinePolymorphic(
+        @Options(inline = true) Map<String, String> extras,
+        @Options(inline = true) InlineDatabaseConfig database
+    ) implements Loadable {}
+
     public record TraditionalNestedConfig(
         String appName,
         NestedKeyRecord server  // No @Options(inline = true)

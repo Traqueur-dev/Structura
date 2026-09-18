@@ -90,6 +90,15 @@ public final class WriterTestModels {
     ) implements Loadable {}
 
     // =========================================================================
+    // @Options(inline = true) on a Map — catch-all of its node
+    // =========================================================================
+
+    public record CatchAllMapConfig(
+        @DefaultString("greeting shown on join") String                     comment,
+        @Options(inline = true)                  Map<String, String>        byLocale
+    ) implements Loadable {}
+
+    // =========================================================================
     // @Polymorphic standard (discriminator inside the nested map)
     // =========================================================================
 

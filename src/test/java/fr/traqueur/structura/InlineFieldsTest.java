@@ -9,6 +9,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Map;
 
 import static fr.traqueur.structura.fixtures.TestModels.*;
@@ -322,6 +323,148 @@ class InlineFieldsTest {
 
             assertEquals("TestApp", result.appName());
             assertEquals("test-value", result.value());  // Should work normally
+        }
+    }
+
+    @Nested
+    @DisplayName("Inline Catch-All Maps")
+    class InlineCatchAllMapTest {
+
+        @Test
+        @DisplayName("Should absorb every key no sibling component claims")
+        void shouldAbsorbUnclaimedKeys() {
+            Map<String, Object> data = Map.of(
+                    "comment", "greeting shown on join",
+                    "fr_FR", "Bienvenue",
+                    "en_US", "Welcome"
+            );
+
+            Greeting result = (Greeting) recordFactory.createInstance(data, Greeting.class, "");
+
+            assertEquals("greeting shown on join", result.comment());
+            assertEquals(Map.of("fr_FR", "Bienvenue", "en_US", "Welcome"), result.byLocale());
+        }
+
+        @Test
+        @DisplayName("Should take the whole node when it is the only component")
+        void shouldTakeWholeNodeWhenAlone() {
+            Map<String, Object> data = Map.of(
+                    "alpha", "one",
+                    "beta", "two"
+            );
+
+            OnlyCatchAllMap result = (OnlyCatchAllMap) recordFactory.createInstance(
+                    data, OnlyCatchAllMap.class, ""
+            );
+
+            assertEquals(Map.of("alpha", "one", "beta", "two"), result.entries());
+        }
+
+        @Test
+        @DisplayName("Should be empty and never null when there is nothing left to absorb")
+        void shouldBeEmptyNotNullWhenNothingRemains() {
+            Map<String, Object> data = Map.of("comment", "lonely");
+
+            Greeting result = (Greeting) recordFactory.createInstance(data, Greeting.class, "");
+
+            assertNotNull(result.byLocale());
+            assertTrue(result.byLocale().isEmpty());
+        }
+
+        @Test
+        @DisplayName("Should honour @Options(name) when computing the claimed keys")
+        void shouldHonourRenamedSibling() {
+            Map<String, Object> data = Map.of(
+                    "note", "renamed sibling",
+                    "comment", "now an ordinary data key"
+            );
+
+            RenamedSiblingCatchAll result = (RenamedSiblingCatchAll) recordFactory.createInstance(
+                    data, RenamedSiblingCatchAll.class, ""
+            );
+
+            assertEquals("renamed sibling", result.comment());
+            assertEquals(Map.of("comment", "now an ordinary data key"), result.byLocale());
+        }
+
+        @Test
+        @DisplayName("Should convert values through the generic type - List values")
+        void shouldConvertListValues() {
+            Map<String, Object> data = Map.of(
+                    "title", "Groups",
+                    "admins", List.of("alice", "bob"),
+                    "guests", List.of("carol")
+            );
+
+            ListValuedCatchAll result = (ListValuedCatchAll) recordFactory.createInstance(
+                    data, ListValuedCatchAll.class, ""
+            );
+
+            assertEquals("Groups", result.title());
+            assertEquals(List.of("alice", "bob"), result.groups().get("admins"));
+            assertEquals(List.of("carol"), result.groups().get("guests"));
+        }
+
+        @Test
+        @DisplayName("Should convert values through the generic type - record values with defaults")
+        void shouldConvertRecordValues() {
+            Map<String, Object> data = Map.of(
+                    "title", "Entries",
+                    "first", Map.of("label", "First", "weight", 5),
+                    "second", Map.of("label", "Second")  // weight falls back to its default
+            );
+
+            RecordValuedCatchAll result = (RecordValuedCatchAll) recordFactory.createInstance(
+                    data, RecordValuedCatchAll.class, ""
+            );
+
+            assertEquals("Entries", result.title());
+            assertEquals(new CatchAllEntry("First", 5), result.entries().get("first"));
+            assertEquals(new CatchAllEntry("Second", 1), result.entries().get("second"));
+        }
+
+        @Test
+        @DisplayName("Should not absorb the keys read by an inline sibling record")
+        void shouldRespectInlineSiblingRecord() {
+            Map<String, Object> data = Map.of(
+                    "host", "api.example.com",
+                    "port", 9000,
+                    "extra", "kept aside"
+            );
+
+            CatchAllWithInlineRecord result = (CatchAllWithInlineRecord) recordFactory.createInstance(
+                    data, CatchAllWithInlineRecord.class, ""
+            );
+
+            assertEquals("api.example.com", result.connection().host());
+            assertEquals(9000, result.connection().port());
+            assertEquals(Map.of("extra", "kept aside"), result.extras());
+        }
+
+        @Test
+        @DisplayName("Should reject two inline maps in the same record")
+        void shouldRejectTwoInlineMaps() {
+            Map<String, Object> data = Map.of("anything", "value");
+
+            StructuraException exception = assertThrows(StructuraException.class, () ->
+                    recordFactory.createInstance(data, TwoCatchAllMaps.class, "")
+            );
+
+            assertTrue(exception.getMessage().contains("Two inline maps compete for the same node"),
+                    "unexpected message: " + exception.getMessage());
+        }
+
+        @Test
+        @DisplayName("Should reject an inline map next to a fully inline polymorphic component")
+        void shouldRejectInlineMapNextToFullyInlinePolymorphic() {
+            Map<String, Object> data = Map.of("type", "mysql", "host", "db.example.com");
+
+            StructuraException exception = assertThrows(StructuraException.class, () ->
+                    recordFactory.createInstance(data, CatchAllNextToFullyInlinePolymorphic.class, "")
+            );
+
+            assertTrue(exception.getMessage().contains("fully inline polymorphic component"),
+                    "unexpected message: " + exception.getMessage());
         }
     }
 

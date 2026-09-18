@@ -12,6 +12,8 @@ import java.lang.reflect.Parameter;
 import java.lang.reflect.RecordComponent;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
@@ -185,6 +187,11 @@ public class RecordInstanceFactory {
                 return createInstance(data, component.getType(), prefix);
             }
 
+            // For maps, absorb every key of the node that no sibling component claims
+            if (Map.class.isAssignableFrom(component.getType())) {
+                return resolveInlineMapValue(component, parameter, data, prefix);
+            }
+
             // For polymorphic interfaces, enrich parent data with discriminator and convert
             if (component.getType().isInterface() && isPolymorphicWithInline(component.getType())) {
                 String fieldName = fieldMapper.getEffectiveFieldName(parameter, component.getName());
@@ -239,6 +246,13 @@ public class RecordInstanceFactory {
             return true;
         }
 
+        // Inline also works for maps, which become the catch-all of their node.
+        // Map is an interface, so this must be checked before the polymorphic
+        // interface branch below, which would otherwise report false for it.
+        if (Map.class.isAssignableFrom(type)) {
+            return true;
+        }
+
         // Inline also works for polymorphic interfaces with @Polymorphic(inline = true)
         if (type.isInterface() && Loadable.class.isAssignableFrom(type)) {
             Polymorphic polymorphic = type.getAnnotation(Polymorphic.class);
@@ -246,6 +260,105 @@ public class RecordInstanceFactory {
         }
 
         return false;
+    }
+
+    /**
+     * Resolves an inline catch-all map: every key of the node that no sibling
+     * component claims is handed to the map, converted through its generic value type.
+     *
+     * <p>The map is never null — when nothing is left to absorb it is simply empty,
+     * which is why this never falls back to {@code getDefaultValue}.</p>
+     *
+     * @param component the map component
+     * @param parameter the corresponding constructor parameter
+     * @param data the YAML data of the node
+     * @param prefix the path prefix
+     * @return the converted map, possibly empty
+     */
+    private Object resolveInlineMapValue(RecordComponent component, Parameter parameter,
+                                         Map<String, Object> data, String prefix) {
+        Class<?> recordClass = parameter.getDeclaringExecutable().getDeclaringClass();
+
+        Set<String> claimedKeys = new HashSet<>();
+        collectClaimedKeys(recordClass, component, component.getName(), claimedKeys);
+
+        Map<String, Object> remaining = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : data.entrySet()) {
+            if (!claimedKeys.contains(entry.getKey())) {
+                remaining.put(entry.getKey(), entry.getValue());
+            }
+        }
+
+        return valueConverter.convert(remaining, component.getGenericType(), component.getType(), prefix);
+    }
+
+    /**
+     * Collects the YAML keys claimed by the siblings of an inline catch-all map.
+     *
+     * <p>A key is claimed by its component's effective name, so {@code @Options(name = "...")}
+     * is honoured. An inline sibling record reads its own components at this very level,
+     * so its keys are collected recursively.</p>
+     *
+     * @param recordClass the record whose components are inspected
+     * @param inlineMapComponent the catch-all map, used for error messages
+     * @param skippedComponentName the component to skip (the map itself), null when recursing
+     * @param claimedKeys the set to populate
+     * @throws StructuraException if a second inline map or a fully inline polymorphic
+     *                            component competes for the same node
+     */
+    private void collectClaimedKeys(Class<?> recordClass, RecordComponent inlineMapComponent,
+                                    String skippedComponentName, Set<String> claimedKeys) {
+        RecordComponent[] components = recordClass.getRecordComponents();
+
+        for (int i = 0; i < components.length; i++) {
+            RecordComponent component = components[i];
+            if (component.getName().equals(skippedComponentName)) {
+                continue;
+            }
+
+            Parameter parameter = getConstructorParameter(recordClass, i);
+            Class<?> type = component.getType();
+
+            if (isInlineField(parameter, type)) {
+                if (type.isRecord()) {
+                    collectClaimedKeys(type, inlineMapComponent, null, claimedKeys);
+                    continue;
+                }
+
+                if (Map.class.isAssignableFrom(type)) {
+                    throw new StructuraException(
+                            "Two inline maps compete for the same node: '" +
+                                    describeComponent(inlineMapComponent) + "' and '" +
+                                    recordClass.getSimpleName() + "." + component.getName() +
+                                    "'. Nothing says how the remaining keys should be split between them: " +
+                                    "keep a single @Options(inline = true) map and nest the other one under its own key."
+                    );
+                }
+
+                throw new StructuraException(
+                        "The inline map '" + describeComponent(inlineMapComponent) +
+                                "' cannot live next to the fully inline polymorphic component '" +
+                                recordClass.getSimpleName() + "." + component.getName() +
+                                "': the keys of a @Options(inline = true) + @Polymorphic(inline = true) component " +
+                                "are only known once its discriminator has been read, so the map would silently " +
+                                "swallow them. Remove @Options(inline = true) from one of the two."
+                );
+            }
+
+            claimedKeys.add(fieldMapper.getEffectiveFieldName(parameter, component.getName()));
+
+            // A @Polymorphic(inline = true) sibling also reads its discriminator at this level
+            if (isPolymorphicWithInline(type)) {
+                claimedKeys.add(type.getAnnotation(Polymorphic.class).key());
+            }
+        }
+    }
+
+    /**
+     * Renders a component as {@code Record.component} for error messages.
+     */
+    private String describeComponent(RecordComponent component) {
+        return component.getDeclaringRecord().getSimpleName() + "." + component.getName();
     }
 
     /**

@@ -51,7 +51,30 @@ public @interface Options {
      * host: localhost    # server fields are flattened to parent level
      * port: 8080
      *
-     * Only works for record types implementing Loadable.
+     * Works for record types implementing Loadable, for interfaces annotated with
+     * {@code @Polymorphic(inline = true)}, and for {@link java.util.Map} components.
+     *
+     * On a Map, inline turns the component into the catch-all of its node: it absorbs
+     * every key that no sibling component claims. A sibling claims its effective name,
+     * so {@link #name()} is honoured, and an inline sibling record claims — recursively —
+     * the names of the fields it reads at that same level. Values go through the Map's
+     * generic value type, so Map&lt;String, List&lt;String&gt;&gt; and
+     * Map&lt;String, SomeRecord&gt; work as anywhere else. Given a record declaring a
+     * String comment and a catch-all Map&lt;String, String&gt; byLocale:
+     *
+     * comment: "greeting shown on join"   # the declared component
+     * fr_FR: "Bienvenue"                  # absorbed by byLocale
+     * en_US: "Welcome"                    # absorbed by byLocale
+     *
+     * A catch-all map is never null: with nothing left to absorb it is simply empty, so
+     * it is never reported as a missing required field. It may be declared anywhere in
+     * the record. Two shapes are rejected at load time, because they would produce a
+     * wrong but plausible result: two inline maps in the same record, since nothing says
+     * how to split the remaining keys between them, and an inline map next to a fully
+     * inline polymorphic component (inline here plus {@code @Polymorphic(inline = true)}),
+     * whose keys are only known once its discriminator has been read and would therefore
+     * be silently swallowed by the map.
+     *
      * Defaults to false.
      *
      * @return true if the fields should be inlined, false otherwise

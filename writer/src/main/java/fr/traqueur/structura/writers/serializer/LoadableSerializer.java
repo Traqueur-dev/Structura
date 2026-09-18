@@ -26,6 +26,8 @@ import java.util.stream.Collectors;
  * <ul>
  *   <li>camelCase → kebab-case key conversion</li>
  *   <li>{@code @Options(inline = true)} — flattens a sub-record's fields into the parent map</li>
+ *   <li>{@code @Options(inline = true)} on a {@code Map} — catch-all map: its entries are written
+ *       at the parent level and the field name is dropped</li>
  *   <li>{@code @Options(optional = true)} — null fields are silently omitted</li>
  *   <li>{@code @Options(name = "...")} — overrides the YAML key for a field</li>
  *   <li>{@code @Options(isKey = true)} simple — record serialized as {@code {keyValue: {otherFields}}}</li>
@@ -152,6 +154,7 @@ public class LoadableSerializer {
      * <p>Dispatch (in priority order):</p>
      * <ol>
      *   <li>{@code @Options(inline=true)} + concrete Loadable record → flatten sub-fields</li>
+     *   <li>{@code @Options(inline=true)} + {@code Map} → entries written at parent level, key dropped</li>
      *   <li>{@code @Options(inline=true)} + {@code @Polymorphic(inline=true)} → fully inline</li>
      *   <li>{@code @Polymorphic(useKey=true)} → discriminator value becomes the YAML key</li>
      *   <li>{@code @Polymorphic(inline=true)} → discriminator at parent, fields under key</li>
@@ -178,6 +181,15 @@ public class LoadableSerializer {
         if (isInline) {
             if (type.isRecord() && Loadable.class.isAssignableFrom(type)) {
                 result.putAll(toMap(value));
+            } else if (Map.class.isAssignableFrom(type)) {
+                // Catch-all map: its entries are poured at the parent level and the field
+                // name is dropped, mirroring how the reader absorbs the unclaimed keys
+                Object entries = serializeValue(value, component.getGenericType());
+                if (entries instanceof Map<?, ?> entryMap) {
+                    entryMap.forEach((k, v) -> result.put(k.toString(), v));
+                } else {
+                    result.put(key, entries);
+                }
             } else if (isPolymorphicInterface(type)) {
                 Polymorphic poly = type.getAnnotation(Polymorphic.class);
                 if (poly.inline()) {
