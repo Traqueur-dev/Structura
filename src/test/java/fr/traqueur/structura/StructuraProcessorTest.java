@@ -1,7 +1,10 @@
 package fr.traqueur.structura;
 
 import fr.traqueur.structura.exceptions.StructuraException;
+import fr.traqueur.structura.registries.CustomReaderRegistry;
 import org.junit.jupiter.api.*;
+
+import java.util.Map;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -377,6 +380,47 @@ class StructuraProcessorTest {
 
             assertEquals(LogLevel.INFO, config.logLevel());
             assertEquals(Environment.PRODUCTION, config.environment());
+        }
+
+        @Test
+        @DisplayName("Should hand the whole node to an inline enum field, minus the sibling keys")
+        void shouldReadLongFormIntoInlineEnumField() {
+            parseEnumSuccessfully(processor, INLINE_ENUM_LONG_FORM, InlineMessages.class);
+
+            assertEquals(Map.of("fr_FR", "Bonjour", "en_US", "Hello"), InlineMessages.GREETING.value.byLocale());
+            assertEquals("shown on join", InlineMessages.GREETING.comment);
+            assertEquals(Map.of("fr_FR", "Au revoir"), InlineMessages.BYE.value.byLocale());
+            assertNull(InlineMessages.BYE.comment);
+        }
+
+        @Test
+        @DisplayName("Should read a scalar into an inline enum field through its reader")
+        void shouldReadShortFormIntoInlineEnumField() {
+            CustomReaderRegistry registry = CustomReaderRegistry.getInstance();
+            registry.register(LocalizedFixture.class, LocalizedFixture::of);
+            try {
+                parseEnumSuccessfully(processor, INLINE_ENUM_SHORT_FORM, InlineMessages.class);
+            } finally {
+                registry.unregister(LocalizedFixture.class);
+            }
+
+            assertEquals(Map.of("fr_FR", "Bonjour"), InlineMessages.GREETING.value.byLocale());
+            assertEquals(Map.of("fr_FR", "Au revoir"), InlineMessages.BYE.value.byLocale());
+        }
+
+        @Test
+        @DisplayName("Should keep the Java literal when a long form hits a field that is not inline")
+        void shouldKeepLiteralWhenLongFormHitsPlainField() {
+            parseEnumSuccessfully(processor, INLINE_ENUM_PLAIN_LONG_FORM, PlainMessages.class);
+
+            assertEquals(Map.of("fr_FR", "literal"), PlainMessages.GREETING.value.byLocale());
+        }
+
+        @Test
+        @DisplayName("Should reject two inline fields in the same enum")
+        void shouldRejectTwoInlineEnumFields() {
+            parseEnumWithExpectedException(processor, INLINE_ENUM_PLAIN_LONG_FORM, TwoInlineMessages.class,
+                "several inline fields");
         }
     }
 

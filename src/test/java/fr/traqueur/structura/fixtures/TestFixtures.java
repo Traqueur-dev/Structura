@@ -237,6 +237,28 @@ public final class TestFixtures {
           default-port: 27017
         """;
 
+    // ==================== Inline Enum Fields (2.2.1) ====================
+
+    public static final String INLINE_ENUM_LONG_FORM = """
+        greeting:
+          fr_FR: "Bonjour"
+          en_US: "Hello"
+          comment: "shown on join"
+        bye:
+          fr_FR: "Au revoir"
+        """;
+
+    public static final String INLINE_ENUM_SHORT_FORM = """
+        greeting: "Bonjour"
+        bye: "Au revoir"
+        """;
+
+    public static final String INLINE_ENUM_PLAIN_LONG_FORM = """
+        greeting:
+          fr_FR: "Bonjour"
+          en_US: "Hello"
+        """;
+
     // ==================== Integration Test Enum Configurations ====================
 
     public static final String LOADABLE_ENUM_FULL = """

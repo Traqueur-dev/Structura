@@ -1,5 +1,6 @@
 package fr.traqueur.structura;
 
+import fr.traqueur.structura.annotations.Options;
 import fr.traqueur.structura.api.Loadable;
 import fr.traqueur.structura.conversion.ValueConverter;
 import fr.traqueur.structura.exceptions.StructuraException;
@@ -12,6 +13,7 @@ import org.yaml.snakeyaml.Yaml;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -159,9 +161,10 @@ public class StructuraProcessor {
     private void injectDataIntoEnum(Enum<?> enumConstant, Object data) {
         Class<?> enumClass = enumConstant.getClass();
         Field[] fields = enumClass.getDeclaredFields();
+        rejectSeveralInlineFields(enumClass, fields);
 
         for (Field field : fields) {
-            if (field.isSynthetic() || field.isEnumConstant() || Modifier.isStatic(field.getModifiers())) {
+            if (isIgnoredEnumField(field)) {
                 continue;
             }
 
@@ -185,6 +188,59 @@ public class StructuraProcessor {
     }
 
     /**
+     * Enum fields that carry no data: constants, synthetic members and statics.
+     */
+    private static boolean isIgnoredEnumField(Field field) {
+        return field.isSynthetic() || field.isEnumConstant() || Modifier.isStatic(field.getModifiers());
+    }
+
+    private static boolean isInlineField(Field field) {
+        Options options = field.getAnnotation(Options.class);
+        return options != null && options.inline();
+    }
+
+    /**
+     * Two inline fields in one enum would both claim the whole node, with nothing saying how
+     * to split it — rejected up front rather than resolved by declaration order.
+     */
+    private void rejectSeveralInlineFields(Class<?> enumClass, Field[] fields) {
+        List<String> inlineFields = Arrays.stream(fields)
+                .filter(field -> !isIgnoredEnumField(field))
+                .filter(StructuraProcessor::isInlineField)
+                .map(Field::getName)
+                .toList();
+        if (inlineFields.size() > 1) {
+            throw new StructuraException("Enum " + enumClass.getSimpleName()
+                    + " declares several inline fields " + inlineFields
+                    + ": only one field can absorb the node, remove @Options(inline = true) from the others");
+        }
+    }
+
+    /**
+     * The node handed to an inline enum field: the node itself for a scalar, and for a map the
+     * node minus the keys the sibling fields claim — the same rule as an inline component of a
+     * record, so that a data key and a sibling field never compete for the same name.
+     *
+     * @param field the inline field
+     * @param data the YAML node of the enum constant
+     * @return the value to convert into the field's type
+     */
+    private Object inlineNode(Field field, Object data) {
+        if (!(data instanceof Map<?, ?> map)) {
+            return data;
+        }
+        Map<String, Object> remaining = new LinkedHashMap<>();
+        map.forEach((key, value) -> remaining.put(String.valueOf(key), value));
+        for (Field sibling : field.getDeclaringClass().getDeclaredFields()) {
+            if (sibling.equals(field) || isIgnoredEnumField(sibling)) {
+                continue;
+            }
+            remaining.remove(fieldMapper.getFieldNameFromField(sibling));
+        }
+        return remaining;
+    }
+
+    /**
      * Extracts a field value from YAML data.
      *
      * @param field the enum field to populate
@@ -192,6 +248,14 @@ public class StructuraProcessor {
      * @return the converted value or null if not found
      */
     private Object getFieldValueFromData(Field field, Object data) {
+        Options options = field.getAnnotation(Options.class);
+        if (options != null && options.inline()) {
+            // The whole node is this field's value: a scalar goes through the readers as usual,
+            // a map is handed to the converter minus the keys the sibling fields claim, exactly
+            // like an inline component of a record.
+            return valueConverter.convert(inlineNode(field, data), field.getGenericType(), field.getType(), "");
+        }
+
         String fieldName = fieldMapper.getFieldNameFromField(field);
 
         if (data instanceof Map<?, ?> map) {

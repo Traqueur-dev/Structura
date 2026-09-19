@@ -491,6 +491,44 @@ public final class TestModels {
         Environment environment
     ) implements Loadable {}
 
+    // ==================== Inline enum fields (2.2.1) ====================
+
+    /** A translated text: the short form is a scalar, the long form a map of locale tags. */
+    public record LocalizedFixture(@Options(inline = true) Map<String, String> byLocale) implements Loadable {
+        public static LocalizedFixture of(String canonical) {
+            return new LocalizedFixture(Map.of("fr_FR", canonical));
+        }
+    }
+
+    /** The whole node is {@code value}; {@code comment} is a sibling and keeps its own key. */
+    public enum InlineMessages implements Loadable {
+        GREETING, BYE;
+
+        @Options(inline = true)
+        public LocalizedFixture value = LocalizedFixture.of("literal");
+
+        @Options(optional = true)
+        public String comment;
+    }
+
+    /** Same shape without the annotation: documents that the long form is then silently ignored. */
+    public enum PlainMessages implements Loadable {
+        GREETING;
+
+        public LocalizedFixture value = LocalizedFixture.of("literal");
+    }
+
+    /** Two inline fields cannot both absorb the node. */
+    public enum TwoInlineMessages implements Loadable {
+        GREETING;
+
+        @Options(inline = true)
+        public LocalizedFixture value;
+
+        @Options(inline = true)
+        public LocalizedFixture other;
+    }
+
     // ==================== Edge Cases ====================
 
     public record EmptyConfig() implements Loadable {}

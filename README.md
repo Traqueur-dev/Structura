@@ -245,6 +245,29 @@ Two shapes are **rejected at load time**, because they would produce a wrong but
 - **two inline maps in the same record** — nothing says how to split the remaining keys between them;
 - **an inline map next to a fully inline polymorphic field** (`@Options(inline = true)` + `@Polymorphic(inline = true)`) — the keys of that field are only known once its discriminator has been read, so the map would silently swallow them.
 
+#### Inline on an enum field
+
+The same annotation on a field of a `Loadable` **enum** means "the whole node of the constant is this field's value": a scalar goes through the custom readers, a map through the converter — minus the keys the sibling fields claim, exactly like an inline component of a record. This is what lets one key accept both a short and a long form:
+
+```java
+public enum Messages implements Loadable {
+    GREETING, BYE;
+
+    @Options(inline = true)   public LocalizedText value;   // a record with an inline Map<String, String>
+    @Options(optional = true) public String comment;        // a sibling: keeps its own key
+}
+```
+
+```yaml
+greeting: "Bonjour"          # short form: the reader registered for LocalizedText builds it
+bye:                         # long form: the node minus `comment` becomes the record
+  fr_FR: "Au revoir"
+  en_US: "Goodbye"
+  comment: "sent on quit"
+```
+
+Without the annotation a map under a constant is read as the **container of the fields** (`bye: { value: … }`): a long form would be silently ignored and the Java literal kept. Two inline fields in the same enum are rejected at load time.
+
 ### Key-based Mapping
 
 Use `@Options(isKey = true)` to create flexible YAML structures where keys become field values or where complex objects can be flattened.
