@@ -161,7 +161,7 @@ public class StructuraProcessor {
     private void injectDataIntoEnum(Enum<?> enumConstant, Object data) {
         Class<?> enumClass = enumConstant.getClass();
         Field[] fields = enumClass.getDeclaredFields();
-        rejectSeveralInlineFields(enumClass, fields);
+        boolean hasInlineField = rejectSeveralInlineFields(enumClass, fields);
 
         for (Field field : fields) {
             if (isIgnoredEnumField(field)) {
@@ -170,7 +170,7 @@ public class StructuraProcessor {
 
             try {
                 field.setAccessible(true);
-                Object fieldValue = getFieldValueFromData(field, data);
+                Object fieldValue = getFieldValueFromData(field, data, hasInlineField);
 
                 if (fieldValue == null) {
                     fieldValue = DefaultValueRegistry.getInstance()
@@ -202,8 +202,10 @@ public class StructuraProcessor {
     /**
      * Two inline fields in one enum would both claim the whole node, with nothing saying how
      * to split it — rejected up front rather than resolved by declaration order.
+     *
+     * @return whether the enum declares an inline field
      */
-    private void rejectSeveralInlineFields(Class<?> enumClass, Field[] fields) {
+    private boolean rejectSeveralInlineFields(Class<?> enumClass, Field[] fields) {
         List<String> inlineFields = Arrays.stream(fields)
                 .filter(field -> !isIgnoredEnumField(field))
                 .filter(StructuraProcessor::isInlineField)
@@ -214,6 +216,7 @@ public class StructuraProcessor {
                     + " declares several inline fields " + inlineFields
                     + ": only one field can absorb the node, remove @Options(inline = true) from the others");
         }
+        return !inlineFields.isEmpty();
     }
 
     /**
@@ -245,15 +248,21 @@ public class StructuraProcessor {
      *
      * @param field the enum field to populate
      * @param data the YAML data
+     * @param hasInlineField whether a sibling field absorbs the whole node
      * @return the converted value or null if not found
      */
-    private Object getFieldValueFromData(Field field, Object data) {
-        Options options = field.getAnnotation(Options.class);
-        if (options != null && options.inline()) {
+    private Object getFieldValueFromData(Field field, Object data, boolean hasInlineField) {
+        if (isInlineField(field)) {
             // The whole node is this field's value: a scalar goes through the readers as usual,
             // a map is handed to the converter minus the keys the sibling fields claim, exactly
             // like an inline component of a record.
             return valueConverter.convert(inlineNode(field, data), field.getGenericType(), field.getType(), "");
+        }
+
+        if (hasInlineField && !(data instanceof Map<?, ?>)) {
+            // A scalar node belongs to the inline field alone: without this, the scalar branch
+            // below would hand "Au revoir" to every sibling whose type happens to be String.
+            return null;
         }
 
         String fieldName = fieldMapper.getFieldNameFromField(field);

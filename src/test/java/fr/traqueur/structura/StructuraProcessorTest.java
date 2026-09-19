@@ -406,6 +406,8 @@ class StructuraProcessorTest {
 
             assertEquals(Map.of("fr_FR", "Bonjour"), InlineMessages.GREETING.value.byLocale());
             assertEquals(Map.of("fr_FR", "Au revoir"), InlineMessages.BYE.value.byLocale());
+            // The scalar belongs to the inline field alone: a String sibling must not receive it.
+            assertNull(InlineMessages.BYE.comment);
         }
 
         @Test
