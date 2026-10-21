@@ -56,6 +56,35 @@ public class FieldMapper {
     }
 
     /**
+     * The key a record component is read from: {@code @Options(name = "...")} when given,
+     * otherwise its name converted to kebab-case.
+     *
+     * @param component the record component
+     * @return its key in the document
+     */
+    public static String keyOf(RecordComponent component) {
+        Options options = component.getAnnotation(Options.class);
+        if (options != null && !options.name().trim().isEmpty()) {
+            return options.name().trim();
+        }
+        return toKebabCase(component.getName());
+    }
+
+    /**
+     * Converts a camelCase name to kebab-case, the rule every key of a document follows.
+     *
+     * @param camelCase the camelCase string
+     * @return the kebab-case string
+     */
+    static String toKebabCase(String camelCase) {
+        return CONVERSION_CACHE.computeIfAbsent("camel:" + camelCase, key -> {
+            String actual = key.substring(6); // Remove "camel:" prefix
+            Matcher matcher = CAMEL_CASE_PATTERN.matcher(actual);
+            return matcher.replaceAll(KEBAB_CASE_REPLACEMENT).toLowerCase();
+        });
+    }
+
+    /**
      * Extracts the custom name from the @Options annotation if present.
      *
      * @param element the annotated element (Parameter or Field)
@@ -111,11 +140,7 @@ public class FieldMapper {
      * @return the kebab-case string
      */
     public String convertCamelCaseToKebabCase(String camelCase) {
-        return CONVERSION_CACHE.computeIfAbsent("camel:" + camelCase, key -> {
-            String actual = key.substring(6); // Remove "camel:" prefix
-            Matcher matcher = CAMEL_CASE_PATTERN.matcher(actual);
-            return matcher.replaceAll(KEBAB_CASE_REPLACEMENT).toLowerCase();
-        });
+        return toKebabCase(camelCase);
     }
 
     /**
@@ -206,11 +231,25 @@ public class FieldMapper {
      * @throws StructuraException if the field is required but missing
      */
     public Object getDefaultValue(Parameter parameter, String path) {
+        return getDefaultValue(parameter, path, path.substring(path.lastIndexOf('.') + 1));
+    }
+
+    /**
+     * Gets the default value for a given parameter.
+     *
+     * @param parameter the constructor parameter
+     * @param path the complete path of the key in the document
+     * @param key the key itself, as written in the document
+     * @return the default value or null
+     * @throws StructuraException of kind MISSING if the field is required but missing
+     */
+    public Object getDefaultValue(Parameter parameter, String path, String key) {
         Object defaultValue = DefaultValueRegistry.getInstance()
                 .getDefaultValue(parameter.getType(), List.of(parameter.getAnnotations()));
 
         if (defaultValue == null && !isOptional(parameter)) {
-            throw new StructuraException(path + " is required but not provided");
+            throw new StructuraException(StructuraException.Kind.MISSING,
+                    "'" + key + "' is required but not provided", path);
         }
 
         return defaultValue;

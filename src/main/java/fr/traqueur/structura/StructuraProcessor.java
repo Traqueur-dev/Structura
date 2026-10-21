@@ -3,12 +3,12 @@ package fr.traqueur.structura;
 import fr.traqueur.structura.annotations.Options;
 import fr.traqueur.structura.api.Loadable;
 import fr.traqueur.structura.conversion.ValueConverter;
+import fr.traqueur.structura.document.YamlDocument;
 import fr.traqueur.structura.exceptions.StructuraException;
 import fr.traqueur.structura.factory.RecordInstanceFactory;
 import fr.traqueur.structura.mapping.FieldMapper;
 import fr.traqueur.structura.registries.DefaultValueRegistry;
 import fr.traqueur.structura.validation.Validator;
-import org.yaml.snakeyaml.Yaml;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
@@ -25,7 +25,6 @@ import java.util.stream.Collectors;
 public class StructuraProcessor {
 
     private final boolean validateOnParse;
-    private Yaml yaml; // Not final for lazy initialization
 
     private final RecordInstanceFactory recordFactory;
     private final FieldMapper fieldMapper;
@@ -38,26 +37,12 @@ public class StructuraProcessor {
      */
     public StructuraProcessor(boolean validateOnParse) {
         this.validateOnParse = validateOnParse;
-        // yaml will be initialized on first use (lazy initialization)
 
         this.fieldMapper = new FieldMapper();
         this.recordFactory = new RecordInstanceFactory(fieldMapper);
 
         this.valueConverter = new ValueConverter(recordFactory);
         recordFactory.setValueConverter(valueConverter);
-    }
-
-    /**
-     * Gets the Yaml instance, initializing it lazily on first access.
-     * This improves performance by only creating the Yaml parser when needed.
-     *
-     * @return the Yaml instance
-     */
-    private Yaml getYaml() {
-        if (yaml == null) {
-            yaml = new Yaml();
-        }
-        return yaml;
     }
 
     /**
@@ -70,27 +55,56 @@ public class StructuraProcessor {
      * @throws StructuraException if parsing or validation fails
      */
     public <T extends Loadable> T parse(String yamlString, Class<T> settingsClass) {
+        return parse(yamlString, settingsClass, null);
+    }
+
+    /**
+     * Parses a YAML string to a record instance, naming its source in error messages.
+     *
+     * @param yamlString the YAML content to parse
+     * @param settingsClass the target class (must be a record implementing Loadable)
+     * @param sourceName the name of the source (a file name) shown in error messages, or null
+     * @param <T> the type of the target class
+     * @return the created instance populated with YAML data
+     * @throws StructuraException if parsing or validation fails, located in the text when possible
+     */
+    public <T extends Loadable> T parse(String yamlString, Class<T> settingsClass, String sourceName) {
         validateInput(yamlString, settingsClass);
 
+        YamlDocument document = YamlDocument.parse(yamlString, sourceName);
         try {
-            Map<String, Object> settings = getYaml().load(yamlString);
-            if (settings == null) {
-                settings = Map.of();
-            }
+            Map<String, Object> settings = rootSection(document.data());
 
             T instance = settingsClass.cast(recordFactory.createInstance(settings, settingsClass, ""));
 
             if (validateOnParse) {
-                Validator.INSTANCE.validate(instance, "");
+                Validator.INSTANCE.validate(instance, "", "");
             }
 
             return instance;
+        } catch (StructuraException e) {
+            throw document.locate(e);
         } catch (Exception e) {
-            if (e instanceof StructuraException) {
-                throw e;
-            }
-            throw new StructuraException("Failed to parse YAML for class " + settingsClass.getName(), e);
+            throw new StructuraException("Failed to parse YAML for class " + settingsClass.getName()
+                    + ": " + e, e);
         }
+    }
+
+    /**
+     * The root of a record document must be a section; an empty document is an empty section.
+     */
+    private static Map<String, Object> rootSection(Object data) {
+        if (data == null) {
+            return Map.of();
+        }
+        if (!(data instanceof Map<?, ?> map)) {
+            throw new StructuraException(StructuraException.Kind.WRONG_TYPE,
+                    "expected a section (key: value) at the root of the document, but got "
+                            + ValueConverter.describe(data), null);
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> settings = (Map<String, Object>) map;
+        return settings;
     }
 
     /**
@@ -102,20 +116,33 @@ public class StructuraProcessor {
      * @throws StructuraException if parsing or validation fails
      */
     public <E extends Enum<E> & Loadable> void parseEnum(String yamlString, Class<E> enumClass) {
+        parseEnum(yamlString, enumClass, null);
+    }
+
+    /**
+     * Parses a YAML string to populate enum constant fields, naming its source in error messages.
+     *
+     * @param yamlString the YAML content to parse
+     * @param enumClass the enum class (must implement Loadable)
+     * @param sourceName the name of the source (a file name) shown in error messages, or null
+     * @param <E> the type of the enum
+     * @throws StructuraException if parsing or validation fails, located in the text when possible
+     */
+    public <E extends Enum<E> & Loadable> void parseEnum(String yamlString, Class<E> enumClass, String sourceName) {
         validateInput(yamlString, enumClass);
 
+        YamlDocument document = YamlDocument.parse(yamlString, sourceName);
         try {
-            Map<String, Object> settings = getYaml().load(yamlString);
-            if (settings == null) {
+            if (document.data() == null) {
                 throw new StructuraException("YAML content is empty or null for enum " + enumClass.getName());
             }
 
-            processEnum(settings, enumClass);
+            processEnum(rootSection(document.data()), enumClass);
+        } catch (StructuraException e) {
+            throw document.locate(e);
         } catch (Exception e) {
-            if (e instanceof StructuraException) {
-                throw e;
-            }
-            throw new StructuraException("Failed to parse enum YAML for class " + enumClass.getName(), e);
+            throw new StructuraException("Failed to parse enum YAML for class " + enumClass.getName()
+                    + ": " + e, e);
         }
     }
 
@@ -136,18 +163,20 @@ public class StructuraProcessor {
             E enumConstant = entry.getValue();
 
             if (!settings.containsKey(kebabCaseName)) {
-                throw new StructuraException("Missing data for enum constant: " + kebabCaseName);
+                throw new StructuraException(StructuraException.Kind.MISSING,
+                        "Missing data for enum constant: " + kebabCaseName, kebabCaseName);
             }
 
             Object data = settings.get(kebabCaseName);
             if (data == null) {
-                throw new StructuraException("Null data for enum constant: " + kebabCaseName);
+                throw new StructuraException(StructuraException.Kind.MISSING,
+                        "Null data for enum constant: " + kebabCaseName, kebabCaseName);
             }
 
-            injectDataIntoEnum(enumConstant, data);
+            injectDataIntoEnum(enumConstant, data, kebabCaseName);
 
             if (validateOnParse) {
-                Validator.INSTANCE.validate(enumConstant, kebabCaseName);
+                Validator.INSTANCE.validate(enumConstant, kebabCaseName, kebabCaseName);
             }
         }
     }
@@ -157,8 +186,9 @@ public class StructuraProcessor {
      *
      * @param enumConstant the enum constant to populate
      * @param data the corresponding YAML data
+     * @param path the path of the constant in the document
      */
-    private void injectDataIntoEnum(Enum<?> enumConstant, Object data) {
+    private void injectDataIntoEnum(Enum<?> enumConstant, Object data, String path) {
         Class<?> enumClass = enumConstant.getClass();
         Field[] fields = enumClass.getDeclaredFields();
         boolean hasInlineField = rejectSeveralInlineFields(enumClass, fields);
@@ -170,7 +200,7 @@ public class StructuraProcessor {
 
             try {
                 field.setAccessible(true);
-                Object fieldValue = getFieldValueFromData(field, data, hasInlineField);
+                Object fieldValue = getFieldValueFromData(field, data, hasInlineField, path);
 
                 if (fieldValue == null) {
                     fieldValue = DefaultValueRegistry.getInstance()
@@ -249,14 +279,15 @@ public class StructuraProcessor {
      * @param field the enum field to populate
      * @param data the YAML data
      * @param hasInlineField whether a sibling field absorbs the whole node
+     * @param path the path of the constant in the document
      * @return the converted value or null if not found
      */
-    private Object getFieldValueFromData(Field field, Object data, boolean hasInlineField) {
+    private Object getFieldValueFromData(Field field, Object data, boolean hasInlineField, String path) {
         if (isInlineField(field)) {
             // The whole node is this field's value: a scalar goes through the readers as usual,
             // a map is handed to the converter minus the keys the sibling fields claim, exactly
             // like an inline component of a record.
-            return valueConverter.convert(inlineNode(field, data), field.getGenericType(), field.getType(), "");
+            return valueConverter.convert(inlineNode(field, data), field.getGenericType(), field.getType(), path);
         }
 
         if (hasInlineField && !(data instanceof Map<?, ?>)) {
@@ -273,13 +304,13 @@ public class StructuraProcessor {
             Object value = dataMap.get(fieldName);
 
             if (value != null) {
-                return valueConverter.convert(value, field.getType(), "");
+                return valueConverter.convert(value, field.getType(), fieldMapper.buildPath(path, fieldName));
             }
         } else {
             if (field.getType().isAssignableFrom(data.getClass())) {
                 return data;
             }
-            return valueConverter.convert(data, field.getType(), "");
+            return valueConverter.convert(data, field.getType(), path);
         }
 
         return null;

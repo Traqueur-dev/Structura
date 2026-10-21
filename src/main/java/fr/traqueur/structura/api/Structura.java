@@ -161,6 +161,21 @@ public class Structura {
     }
 
     /**
+     * Gets the name a source is shown under in the position of an error: the path as given.
+     *
+     * @param source the source object
+     * @return its name, such as {@code plugins/shop/config.yml}
+     */
+    private static String getDisplayName(Object source) {
+        return switch (source) {
+            case Path p -> p.toString();
+            case File f -> f.getPath();
+            case String s -> s;
+            default -> null;
+        };
+    }
+
+    /**
      * Parses a YAML content string into an enum of type E.
      *
      * @param yamlContent the YAML content as a string
@@ -242,7 +257,7 @@ public class Structura {
     private static <E extends Enum<E> & Loadable> void loadEnumInternal(Object source, Class<E> enumClass) {
         try {
             String content = readContent(source);
-            parseEnum(content, enumClass);
+            PROCESSOR.parseEnum(content, enumClass, getDisplayName(source));
         } catch (IOException e) {
             throw new StructuraException("Unable to read file: " + getSourceName(source), e);
         }
@@ -312,7 +327,7 @@ public class Structura {
     private static <T extends Loadable> T loadInternal(Object source, Class<T> configClass) {
         try {
             String content = readContent(source);
-            return parse(content, configClass);
+            return PROCESSOR.parse(content, configClass, getDisplayName(source));
         } catch (IOException e) {
             throw new StructuraException("Unable to read file: " + getSourceName(source), e);
         }
