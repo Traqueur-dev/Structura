@@ -10,7 +10,13 @@ import fr.traqueur.structura.exceptions.StructuraErrors;
 import fr.traqueur.structura.exceptions.StructuraException;
 import fr.traqueur.structura.factory.RecordInstanceFactory;
 import fr.traqueur.structura.mapping.FieldMapper;
+import fr.traqueur.structura.registries.CustomReaderRegistry;
 import fr.traqueur.structura.registries.DefaultValueRegistry;
+import fr.traqueur.structura.registries.PolymorphicRegistries;
+import fr.traqueur.structura.registries.PolymorphicRegistry;
+import fr.traqueur.structura.schema.Schema;
+import fr.traqueur.structura.schema.SchemaBuilder;
+import fr.traqueur.structura.types.TypeToken;
 import fr.traqueur.structura.validation.Validator;
 
 import java.lang.reflect.Field;
@@ -21,6 +27,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -33,6 +40,8 @@ public class StructuraProcessor {
     private final boolean validateOnParse;
     private final boolean collectErrors;
     private final boolean strictKeys;
+    private final CustomReaderRegistry readers;
+    private final PolymorphicRegistries polymorphics;
 
     private final RecordInstanceFactory recordFactory;
     private final FieldMapper fieldMapper;
@@ -68,15 +77,56 @@ public class StructuraProcessor {
      *                   ({@link StructuraException.Kind#UNKNOWN_KEY}) instead of being ignored
      */
     public StructuraProcessor(boolean validateOnParse, boolean collectErrors, boolean strictKeys) {
+        this(validateOnParse, collectErrors, strictKeys, null, null);
+    }
+
+    /**
+     * Constructs a StructuraProcessor.
+     *
+     * @param validateOnParse if true, validates instances after parsing
+     * @param collectErrors if true, a read carries on past an error and reports every error of the
+     *                      document together in a {@link StructuraErrors}
+     * @param strictKeys if true, a key that no component reads is an error
+     *                   ({@link StructuraException.Kind#UNKNOWN_KEY}) instead of being ignored
+     * @param readers this processor's own reader registry, looked up before the global one, or null
+     * @param polymorphics this processor's own polymorphic registries, looked up before the global ones, or null
+     */
+    public StructuraProcessor(boolean validateOnParse, boolean collectErrors, boolean strictKeys,
+                              CustomReaderRegistry readers, PolymorphicRegistries polymorphics) {
         this.validateOnParse = validateOnParse;
         this.collectErrors = collectErrors;
         this.strictKeys = strictKeys;
+        this.readers = readers;
+        this.polymorphics = polymorphics;
 
         this.fieldMapper = new FieldMapper();
         this.recordFactory = new RecordInstanceFactory(fieldMapper);
 
         this.valueConverter = new ValueConverter(recordFactory);
         recordFactory.setValueConverter(valueConverter);
+    }
+
+    /**
+     * Describes what a record reads, with this processor's registries: keys, types, required keys,
+     * defaults, descriptions, polymorphic sub-types, list elements and map values.
+     *
+     * @param type a record implementing Loadable, or an enum implementing Loadable
+     * @return its schema; {@link Schema#toJsonSchema()} renders it for editors
+     */
+    public Schema schema(Class<?> type) {
+        return new SchemaBuilder(
+                polymorphicType -> {
+                    if (polymorphics != null) {
+                        Optional<? extends PolymorphicRegistry<?>> own = polymorphics.find(polymorphicType);
+                        if (own.isPresent()) {
+                            return Optional.of(own.get());
+                        }
+                    }
+                    return PolymorphicRegistries.global().find(polymorphicType).map(registry -> registry);
+                },
+                javaType -> (readers != null && readers.hasReader(TypeToken.of(javaType)))
+                        || CustomReaderRegistry.getInstance().hasReader(TypeToken.of(javaType))
+        ).describe(type);
     }
 
     /**
@@ -198,7 +248,7 @@ public class StructuraProcessor {
      * @return the result of the read
      */
     private <T> T read(YamlDocument document, Supplier<T> body, String failure) {
-        ReadSession session = new ReadSession(collectErrors, strictKeys);
+        ReadSession session = new ReadSession(collectErrors, strictKeys, readers, polymorphics);
         try {
             T result = session.run(body);
             if (!session.errors().isEmpty()) {

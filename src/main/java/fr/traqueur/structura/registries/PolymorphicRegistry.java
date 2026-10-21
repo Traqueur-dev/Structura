@@ -4,6 +4,7 @@ import fr.traqueur.structura.api.Loadable;
 import fr.traqueur.structura.exceptions.StructuraException;
 
 import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -20,7 +21,14 @@ public class PolymorphicRegistry<T extends Loadable> {
      * A static map that holds registries for different Loadable classes.
      * This allows for the retrieval of registries based on the class type.
      */
-    private static final Map<Class<? extends Loadable>, PolymorphicRegistry<?>> REGISTRIES = new HashMap<>();
+    private static final Map<Class<? extends Loadable>, PolymorphicRegistry<?>> REGISTRIES = new ConcurrentHashMap<>();
+
+    /**
+     * @return the storage of the global set of registries
+     */
+    static Map<Class<? extends Loadable>, PolymorphicRegistry<?>> globalRegistries() {
+        return REGISTRIES;
+    }
 
     /**
      * Retrieves the PolymorphicRegistry for a given Loadable class.
@@ -32,16 +40,7 @@ public class PolymorphicRegistry<T extends Loadable> {
      * @throws StructuraException if no registry is found for the specified class
      */
     public static <T extends Loadable> PolymorphicRegistry<T> get(Class<T> clazz) {
-        if(clazz == null) {
-            throw new StructuraException("Cannot retrieve a registry for a null class.");
-        }
-
-        PolymorphicRegistry<?> registry = REGISTRIES.get(clazz);
-        if (registry == null) {
-            throw new StructuraException("No polymorphic registry registered for " + clazz.getSimpleName());
-        }
-        //noinspection unchecked
-        return (PolymorphicRegistry<T>) registry;
+        return PolymorphicRegistries.global().get(clazz);
     }
 
     /**
@@ -56,31 +55,13 @@ public class PolymorphicRegistry<T extends Loadable> {
             Class<T> clazz,
             Consumer<PolymorphicRegistry<T>> configurator) {
 
-        if (clazz == null) {
-            throw new StructuraException("Cannot create registry for null class.");
-        }
-
-        if (configurator == null) {
-            throw new StructuraException("Cannot create registry for null configurator.");
-        }
-
-        if (REGISTRIES.containsKey(clazz)) {
-            throw new StructuraException("Registry already exists for " + clazz.getSimpleName() +
-                    ". Use get() to retrieve it or unregister() first.");
-        }
-
-        PolymorphicRegistry<T> registry = new PolymorphicRegistry<>();
-        configurator.accept(registry);
-        REGISTRIES.put(clazz, registry);
+        PolymorphicRegistries.global().register(clazz, configurator);
     }
 
     /**
-     * Private constructor to prevent direct instantiation.
-     * This class is intended to be used as a singleton for each Loadable type.
-     * Instead, use the static methods to create or retrieve a registry.
+     * Not instantiated directly: use {@link #create} or {@link PolymorphicRegistries#register}.
      */
-    private PolymorphicRegistry() {
-        // Private constructor to prevent direct instantiation
+    PolymorphicRegistry() {
     }
 
     /**

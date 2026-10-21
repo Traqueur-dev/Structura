@@ -8,7 +8,6 @@ import fr.traqueur.structura.conversion.ReadSession;
 import fr.traqueur.structura.conversion.ValueConverter;
 import fr.traqueur.structura.exceptions.StructuraException;
 import fr.traqueur.structura.mapping.FieldMapper;
-import fr.traqueur.structura.registries.PolymorphicRegistry;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
@@ -403,7 +402,7 @@ public class RecordInstanceFactory {
         try {
             @SuppressWarnings("unchecked")
             Class<? extends Loadable> polymorphicType = (Class<? extends Loadable>) type;
-            Optional<? extends Class<?>> subType = PolymorphicRegistry.get(polymorphicType).get(typeName.toString());
+            Optional<? extends Class<?>> subType = ReadSession.polymorphicRegistry(polymorphicType).get(typeName.toString());
             return subType.isEmpty() || collectReadKeys(subType.get(), node, null, known);
         } catch (StructuraException e) {
             return true;

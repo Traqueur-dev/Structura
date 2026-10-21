@@ -741,6 +741,25 @@ registry.registerGeneric(Resolvable.class, ctx ->
 A reader registered for an exact type (`register(new TypeToken<Resolvable<Boolean>>() {}, ...)`) wins over
 the generic one. An exception thrown by a reader becomes a `READER` error with the path and line of the value.
 
+#### Registries per processor
+
+The registries above are global. A processor can be given its own, looked up before the global ones, so
+that two plugins of the same server, or two tests running in parallel, do not share their readers or
+sub-types:
+
+```java
+CustomReaderRegistry readers = CustomReaderRegistry.create();
+readers.register(Component.class, MiniMessage.miniMessage()::deserialize);
+
+PolymorphicRegistries types = PolymorphicRegistries.create();
+types.register(Reward.class, registry -> registry.register("money", MoneyReward.class));
+
+StructuraProcessor processor = Structura.builder()
+        .readers(readers)
+        .polymorphics(types)
+        .build();
+```
+
 ### Reference<T> — External Object References
 
 `Reference<T>` lets you declare a field in a `Loadable` record whose YAML value is a plain string key that maps to a live, externally managed object. Structura resolves it automatically without any `CustomReaderRegistry` setup.
@@ -1017,6 +1036,37 @@ String mysqlDriver = DatabaseType.MYSQL.driver;
 int postgresPort = DatabaseType.POSTGRESQL.defaultPort;
 ```
 
+### Schema (editor autocompletion & documentation) 🗺️
+
+`Structura.schema(Class)` describes what a record reads with Structura's own rules — keys as written in the
+document, types, required keys, defaults, descriptions, polymorphic sub-types, list elements and map
+values — so a documentation or an editor schema never reimplements the walk:
+
+```java
+public record ShopSettings(
+        @Description("Items shown on one page") @DefaultInt(27) int maxItems,
+        @Options(optional = true, description = "Message of the day") String motd,
+        Reward reward
+) implements Loadable {}
+
+Schema schema = Structura.schema(ShopSettings.class);
+for (Schema property : schema.properties()) {
+    property.key();           // "max-items"
+    property.shape();         // INTEGER, SECTION, LIST, MAP, POLYMORPHIC, ENUM, ...
+    property.required();      // false: it has a default
+    property.defaultValue();  // Optional[27]
+    property.description();   // Optional[Items shown on one page]
+    property.subtypes();      // for a polymorphic value: {"item": ..., "money": ...}
+}
+
+// JSON Schema for the YAML extension of your configurators' editor
+Files.writeString(Path.of("shop.schema.json"), schema.toJsonSchema());
+```
+
+The JSON Schema flags keys that no component reads, lists one branch per registered polymorphic sub-type,
+and offers enum values in both cases. Polymorphic sub-types are taken from the registries, so register them
+before asking for the schema (`processor.schema(Class)` uses the processor's own registries).
+
 ## 🎯 Field Name Mapping
 
 Structura automatically converts between Java camelCase and YAML kebab-case:
@@ -1029,6 +1079,25 @@ Structura automatically converts between Java camelCase and YAML kebab-case:
 | `maxRetryCount` | `max-retry-count` |
 
 Override this behavior with `@Options(name = "custom-name")`.
+
+The exact rule: a hyphen goes between a lowercase letter and the uppercase letter that follows it, then
+the whole name is lowercased. Nothing else splits a name — not a digit, not a run of capitals:
+
+| Java Field | YAML Key |
+|------------|----------|
+| `httpURL` | `http-url` |
+| `HTTPServer` | `httpserver` |
+| `myHTTPServer` | `my-httpserver` |
+| `level2Cap` | `level2cap` |
+
+Enum constants are converted from snake_case: `MYSQL_DATABASE` → `mysql-database`.
+
+Tools that must land on the same keys as Structura (a key checker, a schema generator) use the rule itself:
+
+```java
+String key = Structura.keyOf(ShopSettings.class.getRecordComponents()[0]);   // "max-items"
+String constantKey = Structura.keyOf(DatabaseType.MYSQL_DATABASE);           // "mysql-database"
+```
 
 ## 🔧 Configuration Examples
 
