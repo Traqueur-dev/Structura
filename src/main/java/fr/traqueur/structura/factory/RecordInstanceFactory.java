@@ -3,6 +3,7 @@ package fr.traqueur.structura.factory;
 import fr.traqueur.structura.annotations.Options;
 import fr.traqueur.structura.annotations.Polymorphic;
 import fr.traqueur.structura.api.Loadable;
+import fr.traqueur.structura.conversion.ReadSession;
 import fr.traqueur.structura.conversion.ValueConverter;
 import fr.traqueur.structura.exceptions.StructuraException;
 import fr.traqueur.structura.mapping.FieldMapper;
@@ -17,6 +18,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Supplier;
 
 /**
  * RecordInstanceFactory is responsible for creating Java record instances
@@ -59,6 +61,7 @@ public class RecordInstanceFactory {
 
         RecordComponent[] components = recordClass.getRecordComponents();
         RecordComponent keyComponent = fieldMapper.findKeyComponent(components);
+        int errorsBefore = ReadSession.errorCount();
 
         Object[] args;
         if (keyComponent != null) {
@@ -67,7 +70,29 @@ public class RecordInstanceFactory {
             args = buildNormalArgs(components, data, recordClass, prefix);
         }
 
+        if (ReadSession.errorCount() > errorsBefore) {
+            // A component failed and its error was collected: the record cannot be built,
+            // and building it from placeholders would only add misleading errors.
+            return null;
+        }
+
         return instantiateRecord(recordClass, args, prefix);
+    }
+
+    /**
+     * Resolves one component, reporting its error instead of aborting the record when the read
+     * collects errors, so that the following components are still read.
+     *
+     * @param resolver the resolution of the component
+     * @return the resolved value, or null if it failed and its error was collected
+     */
+    private Object resolveOrReport(Supplier<Object> resolver) {
+        try {
+            return resolver.get();
+        } catch (StructuraException e) {
+            ReadSession.report(e);
+            return null;
+        }
     }
 
     /**
@@ -101,18 +126,18 @@ public class RecordInstanceFactory {
             RecordComponent component = components[i];
 
             if (component.getName().equals(keyComponent.getName())) {
-                args[i] = valueConverter.convert(keyValue, component.getType(), entryPath);
+                args[i] = resolveOrReport(() -> valueConverter.convert(keyValue, component.getType(), entryPath));
             } else {
                 Parameter parameter = getConstructorParameter(recordClass, i);
 
                 if (valueData instanceof Map) {
                     @SuppressWarnings("unchecked")
                     Map<String, Object> valueMap = (Map<String, Object>) valueData;
-                    args[i] = resolveComponentValue(component, parameter, valueMap, entryPath);
+                    args[i] = resolveOrReport(() -> resolveComponentValue(component, parameter, valueMap, entryPath));
                 } else {
                     String fieldName = fieldMapper.getEffectiveFieldName(parameter, component.getName());
                     String path = fieldMapper.buildPath(entryPath, fieldName);
-                    args[i] = fieldMapper.getDefaultValue(parameter, path, fieldName);
+                    args[i] = resolveOrReport(() -> fieldMapper.getDefaultValue(parameter, path, fieldName));
                 }
             }
         }
@@ -147,10 +172,10 @@ public class RecordInstanceFactory {
             RecordComponent component = components[i];
 
             if (component.getName().equals(keyComponent.getName())) {
-                args[i] = createInstance(keyComponentData, component.getType(), prefix);
+                args[i] = resolveOrReport(() -> createInstance(keyComponentData, component.getType(), prefix));
             } else {
                 Parameter parameter = getConstructorParameter(recordClass, i);
-                args[i] = resolveComponentValue(component, parameter, otherFieldsData, prefix);
+                args[i] = resolveOrReport(() -> resolveComponentValue(component, parameter, otherFieldsData, prefix));
             }
         }
 
@@ -167,7 +192,7 @@ public class RecordInstanceFactory {
         for (int i = 0; i < components.length; i++) {
             RecordComponent component = components[i];
             Parameter parameter = getConstructorParameter(recordClass, i);
-            args[i] = resolveComponentValue(component, parameter, data, prefix);
+            args[i] = resolveOrReport(() -> resolveComponentValue(component, parameter, data, prefix));
         }
 
         return args;

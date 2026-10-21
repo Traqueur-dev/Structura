@@ -190,7 +190,22 @@ public class ValueConverter {
     private void convertListElements(List<?> list, Type elementGenericType, Class<?> elementRawType,
                                      Collection<Object> result, String prefix) {
         for (int i = 0; i < list.size(); i++) {
-            result.add(convert(list.get(i), elementGenericType, elementRawType, prefix + "[" + i + "]"));
+            result.add(convertOrReport(list.get(i), elementGenericType, elementRawType, prefix + "[" + i + "]"));
+        }
+    }
+
+    /**
+     * Converts one element of a list or one value of a map, reporting its error instead of aborting
+     * the whole collection when the read collects errors, so that the following elements are still read.
+     *
+     * @return the converted value, or null if it failed and its error was collected
+     */
+    private Object convertOrReport(Object value, Type genericType, Class<?> rawType, String path) {
+        try {
+            return convert(value, genericType, rawType, path);
+        } catch (StructuraException e) {
+            ReadSession.report(e);
+            return null;
         }
     }
 
@@ -243,7 +258,7 @@ public class ValueConverter {
                 itemValue, discriminatorValue, elementRawType, itemPath
             );
 
-            result.add(convert(enrichedValue, elementGenericType, elementRawType, itemPath));
+            result.add(convertOrReport(enrichedValue, elementGenericType, elementRawType, itemPath));
         }
     }
 
@@ -264,9 +279,9 @@ public class ValueConverter {
             if (hasKey) {
                 // Wrap as single-entry map so isSimpleKeyMapping works correctly
                 Map<String, Object> wrappedEntry = Map.of(entry.getKey(), itemValue);
-                result.add(convert(wrappedEntry, elementGenericType, elementRawType, prefix));
+                result.add(convertOrReport(wrappedEntry, elementGenericType, elementRawType, prefix));
             } else {
-                result.add(convert(itemValue, elementGenericType, elementRawType, childPath(prefix, entry.getKey())));
+                result.add(convertOrReport(itemValue, elementGenericType, elementRawType, childPath(prefix, entry.getKey())));
             }
         }
     }
@@ -294,33 +309,31 @@ public class ValueConverter {
         // Check if value type uses key-as-discriminator mode
         boolean useKeyAsDiscriminator = isPolymorphicWithKeyAsDiscriminator(valueType);
 
-        if (useKeyAsDiscriminator && Loadable.class.isAssignableFrom(valueType)) {
-            // Use the map key as discriminator for each value
-            return sourceMap.entrySet().stream()
-                    .collect(Collectors.toMap(
-                            entry -> convert(entry.getKey(), typeArgs[0], keyType, childPath(prefix, entry.getKey())),
-                            entry -> {
-                                String discriminatorValue = entry.getKey();
-                                Object itemValue = entry.getValue();
-                                String itemPath = childPath(prefix, discriminatorValue);
+        // Values are converted one by one (rather than through Collectors.toMap, which refuses a null
+        // value) so that a failing value is reported and the following ones are still read.
+        Map<Object, Object> result = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : sourceMap.entrySet()) {
+            String itemPath = childPath(prefix, entry.getKey());
+            Object key = convert(entry.getKey(), typeArgs[0], keyType, itemPath);
 
-                                // Enrich the item value with the discriminator
-                                Map<String, Object> enrichedValue = enrichWithDiscriminator(
-                                    itemValue, discriminatorValue, valueType, itemPath
-                                );
-
-                                return convert(enrichedValue, typeArgs[1], valueType, itemPath);
-                            }
-                    ));
-        } else {
-            // Normal map conversion — thread the full generic Type so nested generics
-            // (e.g. Map<String, Map<String, Loadable>>) resolve their innermost value type.
-            return sourceMap.entrySet().stream()
-                    .collect(Collectors.toMap(
-                            entry -> convert(entry.getKey(), typeArgs[0], keyType, childPath(prefix, entry.getKey())),
-                            entry -> convert(entry.getValue(), typeArgs[1], valueType, childPath(prefix, entry.getKey()))
-                    ));
+            if (useKeyAsDiscriminator && Loadable.class.isAssignableFrom(valueType)) {
+                // Use the map key as discriminator for the value
+                try {
+                    Map<String, Object> enrichedValue = enrichWithDiscriminator(
+                        entry.getValue(), entry.getKey(), valueType, itemPath
+                    );
+                    result.put(key, convert(enrichedValue, typeArgs[1], valueType, itemPath));
+                } catch (StructuraException e) {
+                    ReadSession.report(e.atPath(itemPath));
+                    result.put(key, null);
+                }
+            } else {
+                // Thread the full generic Type so nested generics
+                // (e.g. Map<String, Map<String, Loadable>>) resolve their innermost value type.
+                result.put(key, convertOrReport(entry.getValue(), typeArgs[1], valueType, itemPath));
+            }
         }
+        return result;
     }
 
     /**
