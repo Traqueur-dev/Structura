@@ -1030,6 +1030,25 @@ Structura automatically converts between Java camelCase and YAML kebab-case:
 
 Override this behavior with `@Options(name = "custom-name")`.
 
+The exact rule: a hyphen goes between a lowercase letter and the uppercase letter that follows it, then
+the whole name is lowercased. Nothing else splits a name — not a digit, not a run of capitals:
+
+| Java Field | YAML Key |
+|------------|----------|
+| `httpURL` | `http-url` |
+| `HTTPServer` | `httpserver` |
+| `myHTTPServer` | `my-httpserver` |
+| `level2Cap` | `level2cap` |
+
+Enum constants are converted from snake_case: `MYSQL_DATABASE` → `mysql-database`.
+
+Tools that must land on the same keys as Structura (a key checker, a schema generator) use the rule itself:
+
+```java
+String key = Structura.keyOf(ShopSettings.class.getRecordComponents()[0]);   // "max-items"
+String constantKey = Structura.keyOf(DatabaseType.MYSQL_DATABASE);           // "mysql-database"
+```
+
 ## 🔧 Configuration Examples
 
 ### Complete Application Configuration

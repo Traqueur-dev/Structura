@@ -57,7 +57,7 @@ public class FieldMapper {
 
     /**
      * The key a record component is read from: {@code @Options(name = "...")} when given,
-     * otherwise its name converted to kebab-case.
+     * otherwise its name converted to kebab-case by {@link #toKebabCase(String)}.
      *
      * @param component the record component
      * @return its key in the document
@@ -71,12 +71,24 @@ public class FieldMapper {
     }
 
     /**
-     * Converts a camelCase name to kebab-case, the rule every key of a document follows.
+     * Converts a camelCase name to kebab-case, the rule every key of a document follows:
+     * a hyphen goes between a lowercase letter and the uppercase letter that follows it,
+     * then the whole name is lowercased. Nothing else splits a name — not a digit, not a run of
+     * capitals:
+     * <pre>
+     * maxItems     → max-items
+     * httpURL      → http-url
+     * HTTPServer   → httpserver
+     * myHTTPServer → my-httpserver
+     * level2Cap    → level2cap
+     * level2cap    → level2cap
+     * max_items    → max_items
+     * </pre>
      *
      * @param camelCase the camelCase string
      * @return the kebab-case string
      */
-    static String toKebabCase(String camelCase) {
+    public static String toKebabCase(String camelCase) {
         return CONVERSION_CACHE.computeIfAbsent("camel:" + camelCase, key -> {
             String actual = key.substring(6); // Remove "camel:" prefix
             Matcher matcher = CAMEL_CASE_PATTERN.matcher(actual);
@@ -111,6 +123,19 @@ public class FieldMapper {
     private String getEffectiveName(AnnotatedElement element, String defaultName) {
         String customName = extractCustomName(element);
         return customName != null ? customName : convertCamelCaseToKebabCase(defaultName);
+    }
+
+    /**
+     * The key an enum constant is read from: its name, snake_case converted to kebab-case.
+     * <pre>
+     * MYSQL_DATABASE → mysql-database
+     * </pre>
+     *
+     * @param constant the enum constant
+     * @return its key in the document
+     */
+    public static String keyOf(Enum<?> constant) {
+        return new FieldMapper().convertSnakeCaseToKebabCase(constant.name());
     }
 
     /**

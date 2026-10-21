@@ -5,6 +5,7 @@ import fr.traqueur.structura.annotations.Polymorphic;
 import fr.traqueur.structura.api.Loadable;
 import fr.traqueur.structura.exceptions.StructuraException;
 import fr.traqueur.structura.factory.RecordInstanceFactory;
+import fr.traqueur.structura.mapping.FieldMapper;
 import fr.traqueur.structura.references.Reference;
 import fr.traqueur.structura.references.ReferenceRegistry;
 import fr.traqueur.structura.registries.CustomReaderRegistry;
@@ -600,8 +601,7 @@ public class ValueConverter {
      */
     private Set<String> getRecordFieldNamesAsKebabCase(Class<?> recordType) {
         return Arrays.stream(recordType.getRecordComponents())
-            .map(component -> recordFactory.getFieldMapper()
-                .convertCamelCaseToKebabCase(component.getName()))
+            .map(FieldMapper::keyOf)
             .collect(Collectors.toSet());
     }
 
