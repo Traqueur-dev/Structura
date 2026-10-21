@@ -31,6 +31,7 @@ public class StructuraProcessor {
 
     private final boolean validateOnParse;
     private final boolean collectErrors;
+    private final boolean strictKeys;
 
     private final RecordInstanceFactory recordFactory;
     private final FieldMapper fieldMapper;
@@ -53,8 +54,22 @@ public class StructuraProcessor {
      *                      document together in a {@link StructuraErrors}
      */
     public StructuraProcessor(boolean validateOnParse, boolean collectErrors) {
+        this(validateOnParse, collectErrors, false);
+    }
+
+    /**
+     * Constructs a StructuraProcessor.
+     *
+     * @param validateOnParse if true, validates instances after parsing
+     * @param collectErrors if true, a read carries on past an error and reports every error of the
+     *                      document together in a {@link StructuraErrors}
+     * @param strictKeys if true, a key that no component reads is an error
+     *                   ({@link StructuraException.Kind#UNKNOWN_KEY}) instead of being ignored
+     */
+    public StructuraProcessor(boolean validateOnParse, boolean collectErrors, boolean strictKeys) {
         this.validateOnParse = validateOnParse;
         this.collectErrors = collectErrors;
+        this.strictKeys = strictKeys;
 
         this.fieldMapper = new FieldMapper();
         this.recordFactory = new RecordInstanceFactory(fieldMapper);
@@ -125,7 +140,7 @@ public class StructuraProcessor {
      * @return the result of the read
      */
     private <T> T read(YamlDocument document, Supplier<T> body, String failure) {
-        ReadSession session = new ReadSession(collectErrors);
+        ReadSession session = new ReadSession(collectErrors, strictKeys);
         try {
             T result = session.run(body);
             if (!session.errors().isEmpty()) {

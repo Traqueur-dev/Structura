@@ -87,11 +87,13 @@ public class Structura {
      * <ul>
      *   <li>Validation is enabled during parsing</li>
      *   <li>A read stops at the first error</li>
+     *   <li>A key that no component reads is ignored</li>
      * </ul>
      */
     public static class StructuraBuilder {
         private boolean validateOnParse = true;
         private boolean collectErrors = false;
+        private boolean strictKeys = false;
 
         /**
          * Sets whether to validate the configuration during parsing.
@@ -119,12 +121,30 @@ public class Structura {
         }
 
         /**
+         * Sets whether a key that no component reads is an error rather than silently ignored.
+         *
+         * <p>When enabled, a typo such as {@code max-item: 54} is reported as
+         * {@code unknown key 'max-item' under 'shop' (did you mean 'max-items'?)} instead of leaving
+         * the default value applied without anyone knowing. Inline components, key components,
+         * polymorphic sub-types, map values and list elements are all checked; the keys of a map are
+         * free, and an inline map absorbs every remaining key. A record can also be made strict on
+         * its own with {@link fr.traqueur.structura.annotations.Strict @Strict}.</p>
+         *
+         * @param strict true to refuse unknown keys, false to ignore them (the default)
+         * @return this builder instance for method chaining
+         */
+        public StructuraBuilder strictKeys(boolean strict) {
+            this.strictKeys = strict;
+            return this;
+        }
+
+        /**
          * Builds a new {@link StructuraProcessor} with the specified configurations.
          *
          * @return a new instance of {@link StructuraProcessor}
          */
         public StructuraProcessor build() {
-            return new StructuraProcessor(validateOnParse, collectErrors);
+            return new StructuraProcessor(validateOnParse, collectErrors, strictKeys);
         }
     }
 
