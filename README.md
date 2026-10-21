@@ -1483,7 +1483,7 @@ checked, so that configurations accepted before 2.7.0 stay accepted. Turn it on 
 ```java
 StructuraProcessor processor = Structura.builder().validateNested(true).build();
 // 5:12: Value must be at least 1 (offers[1].price)
-// 8:13: Value must not be empty (currencies.gems.symbol)
+// 8:13: Value cannot be empty (currencies.gems.symbol)
 ```
 
 ## 🧪 Testing
