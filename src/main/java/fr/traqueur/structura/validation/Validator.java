@@ -1,10 +1,13 @@
 package fr.traqueur.structura.validation;
 
+import fr.traqueur.structura.annotations.Options;
 import fr.traqueur.structura.annotations.Polymorphic;
 import fr.traqueur.structura.annotations.validation.*;
 import fr.traqueur.structura.api.Loadable;
+import fr.traqueur.structura.conversion.ReadSession;
 import fr.traqueur.structura.exceptions.StructuraException;
 import fr.traqueur.structura.exceptions.ValidationException;
+import fr.traqueur.structura.mapping.FieldMapper;
 
 import java.lang.reflect.*;
 import java.util.Collection;
@@ -37,14 +40,30 @@ public class Validator {
      * @param path The path for error messages.
      */
     public void validate(Object instance, String path) {
+        validate(instance, path, null);
+    }
+
+    /**
+     * Validates the given instance, attaching to each error the path of the refused key in the
+     * document it was read from, so that the error can be located in the text.
+     *
+     * <p>{@code path} keeps naming components the Java way, as the {@code {path}} placeholder of a
+     * validation message always did; {@code documentPath} follows the keys of the document
+     * ({@code max-items}, inline components flattened).</p>
+     *
+     * @param instance The instance to validate.
+     * @param path The path for error messages.
+     * @param documentPath The path of the instance in the document, or null when it was not read from one.
+     */
+    public void validate(Object instance, String path, String documentPath) {
         if (instance == null) return;
 
         Class<?> clazz = instance.getClass();
 
         if (clazz.isRecord()) {
-            validateRecord(instance, path);
+            validateRecord(instance, path, documentPath);
         } else if (clazz.isEnum()) {
-            validateEnum(instance, path);
+            validateEnum(instance, path, documentPath);
         }
     }
 
@@ -55,11 +74,12 @@ public class Validator {
      * @param path The path for error messages.
      * @throws ValidationException if validation fails.
      */
-    private void validateRecord(Object record, String path) {
+    private void validateRecord(Object record, String path, String documentPath) {
         Class<?> recordClass = record.getClass();
         RecordComponent[] components = recordClass.getRecordComponents();
 
         for (RecordComponent component : components) {
+            String fieldDocumentPath = documentPath == null ? null : componentDocumentPath(component, documentPath);
             try {
                 Method accessor = component.getAccessor();
                 accessor.setAccessible(true);
@@ -69,12 +89,28 @@ public class Validator {
                 validateField(component.getType(), value, component, fieldPath);
 
                 if (value != null && isSettingsType(component.getType())) {
-                    validate(value, fieldPath);
+                    validate(value, fieldPath, fieldDocumentPath);
                 }
             } catch (ReflectiveOperationException e) {
                 throw new ValidationException("Failed to validate field: " + component.getName(), e);
+            } catch (ValidationException e) {
+                // Collected when the read collects errors, so that the next components are validated too
+                ReadSession.report(e.atPath(fieldDocumentPath));
             }
         }
+    }
+
+    /**
+     * The path of a component in the document: an inline component reads its parent's node,
+     * any other component sits under its own key.
+     */
+    private static String componentDocumentPath(RecordComponent component, String documentPath) {
+        Options options = component.getAnnotation(Options.class);
+        if (options != null && options.inline()) {
+            return documentPath;
+        }
+        String key = FieldMapper.keyOf(component);
+        return documentPath.isEmpty() ? key : documentPath + "." + key;
     }
 
     /**
@@ -84,7 +120,7 @@ public class Validator {
      * @param enumInstance The enum instance to validate.
      * @param path The path for error messages.
      */
-    private void validateEnum(Object enumInstance, String path) {
+    private void validateEnum(Object enumInstance, String path, String documentPath) {
         Class<?> enumClass = enumInstance.getClass();
         Field[] fields = enumClass.getDeclaredFields();
 
@@ -101,6 +137,11 @@ public class Validator {
                 validateField(enumClass, value, field, fieldPath);
             } catch (IllegalAccessException e) {
                 throw new ValidationException("Failed to validate enum field: " + field.getName(), e);
+            } catch (ValidationException e) {
+                if (documentPath != null) {
+                    e.atPath(documentPath);
+                }
+                ReadSession.report(e);
             }
         }
     }

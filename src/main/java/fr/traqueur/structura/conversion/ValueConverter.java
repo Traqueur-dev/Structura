@@ -15,6 +15,7 @@ import java.lang.reflect.Type;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -50,6 +51,39 @@ public class ValueConverter {
     public Object convert(Object value, Type genericType, Class<?> rawType, String prefix) {
         if (value == null) return null;
 
+        try {
+            return convertValue(value, genericType, rawType, prefix);
+        } catch (StructuraException e) {
+            // The innermost conversion knows the most precise path: only fill it when absent
+            throw e.atPath(prefix);
+        } catch (RuntimeException e) {
+            throw new StructuraException(StructuraException.Kind.WRONG_TYPE,
+                    "cannot read " + describe(value) + " as " + describe(genericType) + ": " + e.getMessage(),
+                    prefix, e);
+        }
+    }
+
+    /**
+     * Describes a YAML value for an error message: a string is quoted, a section or a list is named.
+     *
+     * @param value the value as read from the document
+     * @return its description, such as {@code 'many'}, {@code 42}, {@code a section} or {@code a list}
+     */
+    public static String describe(Object value) {
+        return switch (value) {
+            case null -> "nothing";
+            case String string -> "'" + string + "'";
+            case Map<?, ?> ignored -> "a section";
+            case Collection<?> ignored -> "a list";
+            default -> String.valueOf(value);
+        };
+    }
+
+    private static String describe(Type type) {
+        return type instanceof Class<?> clazz ? clazz.getSimpleName() : type.getTypeName();
+    }
+
+    private Object convertValue(Object value, Type genericType, Class<?> rawType, String prefix) {
         // Try custom reader first (with generic type information)
         Optional<?> customResult = CustomReaderRegistry.getInstance().convert(value, genericType, rawType);
         if (customResult.isPresent()) {
@@ -61,7 +95,7 @@ public class ValueConverter {
             return value;
         }
 
-        rawType = this.getClassFromRegistry(rawType, value);
+        rawType = this.getClassFromRegistry(rawType, value, prefix);
 
         if (rawType.isEnum()) {
             return convertToEnum(value, rawType);
@@ -155,9 +189,31 @@ public class ValueConverter {
      */
     private void convertListElements(List<?> list, Type elementGenericType, Class<?> elementRawType,
                                      Collection<Object> result, String prefix) {
-        for (Object item : list) {
-            result.add(convert(item, elementGenericType, elementRawType, prefix));
+        for (int i = 0; i < list.size(); i++) {
+            result.add(convertOrReport(list.get(i), elementGenericType, elementRawType, prefix + "[" + i + "]"));
         }
+    }
+
+    /**
+     * Converts one element of a list or one value of a map, reporting its error instead of aborting
+     * the whole collection when the read collects errors, so that the following elements are still read.
+     *
+     * @return the converted value, or null if it failed and its error was collected
+     */
+    private Object convertOrReport(Object value, Type genericType, Class<?> rawType, String path) {
+        try {
+            return convert(value, genericType, rawType, path);
+        } catch (StructuraException e) {
+            ReadSession.report(e);
+            return null;
+        }
+    }
+
+    /**
+     * The path of the value under a key of a section.
+     */
+    private static String childPath(String prefix, Object key) {
+        return prefix.isEmpty() ? String.valueOf(key) : prefix + "." + key;
     }
 
     /**
@@ -197,11 +253,12 @@ public class ValueConverter {
             String discriminatorValue = entry.getKey();
             Object itemValue = entry.getValue();
 
+            String itemPath = childPath(prefix, discriminatorValue);
             Map<String, Object> enrichedValue = enrichWithDiscriminator(
-                itemValue, discriminatorValue, elementRawType, prefix
+                itemValue, discriminatorValue, elementRawType, itemPath
             );
 
-            result.add(convert(enrichedValue, elementGenericType, elementRawType, prefix));
+            result.add(convertOrReport(enrichedValue, elementGenericType, elementRawType, itemPath));
         }
     }
 
@@ -222,9 +279,9 @@ public class ValueConverter {
             if (hasKey) {
                 // Wrap as single-entry map so isSimpleKeyMapping works correctly
                 Map<String, Object> wrappedEntry = Map.of(entry.getKey(), itemValue);
-                result.add(convert(wrappedEntry, elementGenericType, elementRawType, prefix));
+                result.add(convertOrReport(wrappedEntry, elementGenericType, elementRawType, prefix));
             } else {
-                result.add(convert(itemValue, elementGenericType, elementRawType, prefix));
+                result.add(convertOrReport(itemValue, elementGenericType, elementRawType, childPath(prefix, entry.getKey())));
             }
         }
     }
@@ -239,7 +296,8 @@ public class ValueConverter {
         }
 
         if (!(value instanceof Map<?, ?>)) {
-            throw new StructuraException("Cannot convert " + value.getClass().getName() + " to Map at " + prefix);
+            throw new StructuraException(StructuraException.Kind.WRONG_TYPE,
+                    "Cannot convert " + describe(value) + " to a section (key: value)", prefix);
         }
 
         Class<?> keyType = getClassFromType(typeArgs[0]);
@@ -251,32 +309,31 @@ public class ValueConverter {
         // Check if value type uses key-as-discriminator mode
         boolean useKeyAsDiscriminator = isPolymorphicWithKeyAsDiscriminator(valueType);
 
-        if (useKeyAsDiscriminator && Loadable.class.isAssignableFrom(valueType)) {
-            // Use the map key as discriminator for each value
-            return sourceMap.entrySet().stream()
-                    .collect(Collectors.toMap(
-                            entry -> convert(entry.getKey(), typeArgs[0], keyType, prefix),
-                            entry -> {
-                                String discriminatorValue = entry.getKey();
-                                Object itemValue = entry.getValue();
+        // Values are converted one by one (rather than through Collectors.toMap, which refuses a null
+        // value) so that a failing value is reported and the following ones are still read.
+        Map<Object, Object> result = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : sourceMap.entrySet()) {
+            String itemPath = childPath(prefix, entry.getKey());
+            Object key = convert(entry.getKey(), typeArgs[0], keyType, itemPath);
 
-                                // Enrich the item value with the discriminator
-                                Map<String, Object> enrichedValue = enrichWithDiscriminator(
-                                    itemValue, discriminatorValue, valueType, prefix
-                                );
-
-                                return convert(enrichedValue, typeArgs[1], valueType, prefix);
-                            }
-                    ));
-        } else {
-            // Normal map conversion — thread the full generic Type so nested generics
-            // (e.g. Map<String, Map<String, Loadable>>) resolve their innermost value type.
-            return sourceMap.entrySet().stream()
-                    .collect(Collectors.toMap(
-                            entry -> convert(entry.getKey(), typeArgs[0], keyType, prefix),
-                            entry -> convert(entry.getValue(), typeArgs[1], valueType, prefix)
-                    ));
+            if (useKeyAsDiscriminator && Loadable.class.isAssignableFrom(valueType)) {
+                // Use the map key as discriminator for the value
+                try {
+                    Map<String, Object> enrichedValue = enrichWithDiscriminator(
+                        entry.getValue(), entry.getKey(), valueType, itemPath
+                    );
+                    result.put(key, convert(enrichedValue, typeArgs[1], valueType, itemPath));
+                } catch (StructuraException e) {
+                    ReadSession.report(e.atPath(itemPath));
+                    result.put(key, null);
+                }
+            } else {
+                // Thread the full generic Type so nested generics
+                // (e.g. Map<String, Map<String, Loadable>>) resolve their innermost value type.
+                result.put(key, convertOrReport(entry.getValue(), typeArgs[1], valueType, itemPath));
+            }
         }
+        return result;
     }
 
     /**
@@ -294,9 +351,8 @@ public class ValueConverter {
             return alreadyResolved;
         }
         if (!(value instanceof String stringValue)) {
-            throw new StructuraException(
-                "Cannot convert " + value.getClass().getName() + " to Reference at " + prefix +
-                " (expected a String key)"
+            throw new StructuraException(StructuraException.Kind.WRONG_TYPE,
+                "Cannot convert " + describe(value) + " to Reference (expected a String key)", prefix
             );
         }
         Type[] typeArgs = paramType.getActualTypeArguments();
@@ -320,51 +376,82 @@ public class ValueConverter {
         }
 
         if(targetType == LocalDate.class) {
-            return LocalDate.parse(value.toString(), DATE_FORMATTER);
+            try {
+                return LocalDate.parse(value.toString(), DATE_FORMATTER);
+            } catch (DateTimeParseException e) {
+                throw wrongType(describe(value) + " is not a date (expected yyyy-MM-dd)", prefix);
+            }
         }
 
         if(targetType == LocalDateTime.class) {
-            return LocalDateTime.parse(value.toString(), DATE_TIME_FORMATTER);
+            try {
+                return LocalDateTime.parse(value.toString(), DATE_TIME_FORMATTER);
+            } catch (DateTimeParseException e) {
+                throw wrongType(describe(value) + " is not a date and time (expected yyyy-MM-ddTHH:mm:ss)", prefix);
+            }
         }
 
-        if (targetType == int.class || targetType == Integer.class) {
-            return value instanceof Number n ? n.intValue() : Integer.parseInt(value.toString());
-        }
+        try {
+            if (targetType == int.class || targetType == Integer.class) {
+                return value instanceof Number n ? n.intValue() : Integer.parseInt(scalarText(value, prefix));
+            }
 
-        if (targetType == boolean.class || targetType == Boolean.class) {
-            return value instanceof Boolean b ? b : Boolean.parseBoolean(value.toString());
-        }
+            if (targetType == boolean.class || targetType == Boolean.class) {
+                return value instanceof Boolean b ? b : Boolean.parseBoolean(scalarText(value, prefix));
+            }
 
-        if (targetType == long.class || targetType == Long.class) {
-            return value instanceof Number n ? n.longValue() : Long.parseLong(value.toString());
-        }
+            if (targetType == long.class || targetType == Long.class) {
+                return value instanceof Number n ? n.longValue() : Long.parseLong(scalarText(value, prefix));
+            }
 
-        if (targetType == double.class || targetType == Double.class) {
-            return value instanceof Number n ? n.doubleValue() : Double.parseDouble(value.toString());
-        }
+            if (targetType == double.class || targetType == Double.class) {
+                return value instanceof Number n ? n.doubleValue() : Double.parseDouble(scalarText(value, prefix));
+            }
 
-        if (targetType == float.class || targetType == Float.class) {
-            return value instanceof Number n ? n.floatValue() : Float.parseFloat(value.toString());
-        }
+            if (targetType == float.class || targetType == Float.class) {
+                return value instanceof Number n ? n.floatValue() : Float.parseFloat(scalarText(value, prefix));
+            }
 
-        if (targetType == byte.class || targetType == Byte.class) {
-            return value instanceof Number n ? n.byteValue() : Byte.parseByte(value.toString());
-        }
+            if (targetType == byte.class || targetType == Byte.class) {
+                return value instanceof Number n ? n.byteValue() : Byte.parseByte(scalarText(value, prefix));
+            }
 
-        if (targetType == short.class || targetType == Short.class) {
-            return value instanceof Number n ? n.shortValue() : Short.parseShort(value.toString());
+            if (targetType == short.class || targetType == Short.class) {
+                return value instanceof Number n ? n.shortValue() : Short.parseShort(scalarText(value, prefix));
+            }
+        } catch (NumberFormatException e) {
+            throw wrongType(describe(value) + " is not a number", prefix);
         }
 
         if (targetType == char.class || targetType == Character.class) {
-            String str = value.toString();
+            String str = scalarText(value, prefix);
             if (str.length() != 1) {
-                throw new StructuraException("Cannot convert string of length " + str.length() + " to char");
+                throw wrongType("Cannot convert string of length " + str.length() + " to char: "
+                        + describe(value) + " is not a single character", prefix);
             }
             return str.charAt(0);
         }
 
-        throw new StructuraException("Unsupported conversion from " + value.getClass().getName() +
-                " to " + targetType.getName() + " at " + prefix);
+        if (isSettingsRecord(targetType) || (targetType.isInterface() && Loadable.class.isAssignableFrom(targetType))) {
+            throw wrongType("expected a section (key: value) but got " + describe(value), prefix);
+        }
+
+        throw wrongType("Unsupported conversion from " + describe(value) +
+                " to " + targetType.getName(), prefix);
+    }
+
+    /**
+     * The text of a scalar, refusing a section or a list where a single value is expected.
+     */
+    private static String scalarText(Object value, String prefix) {
+        if (value instanceof Map<?, ?> || value instanceof Collection<?>) {
+            throw wrongType("expected a single value but got " + describe(value), prefix);
+        }
+        return value.toString();
+    }
+
+    private static StructuraException wrongType(String detail, String prefix) {
+        return new StructuraException(StructuraException.Kind.WRONG_TYPE, detail, prefix);
     }
 
     /**
@@ -382,11 +469,13 @@ public class ValueConverter {
                     return Enum.valueOf(enumClass, strValue.toUpperCase());
                 }
             } catch (IllegalArgumentException e) {
-                throw new StructuraException("Invalid enum value: " + strValue + " for type: " + targetType.getName() +
-                        ". Available values: " + Arrays.toString(targetType.getEnumConstants()), e);
+                throw new StructuraException(StructuraException.Kind.WRONG_TYPE,
+                        "Invalid enum value: " + strValue + " for type: " + targetType.getName() +
+                        ". Available values: " + Arrays.toString(targetType.getEnumConstants()), null, e);
             }
         }
-        throw new StructuraException("Cannot convert " + value.getClass().getName() + " to enum type: " + targetType.getName());
+        throw new StructuraException(StructuraException.Kind.WRONG_TYPE,
+                "Cannot convert " + describe(value) + " to enum type: " + targetType.getName(), null);
     }
 
     /**
@@ -420,9 +509,10 @@ public class ValueConverter {
      *
      * @param clazz the class to check
      * @param value the value to convert
+     * @param prefix the path of the value in the document
      * @return the class from the registry or the original class
      */
-    private Class<?> getClassFromRegistry(Class<?> clazz, Object value) {
+    private Class<?> getClassFromRegistry(Class<?> clazz, Object value, String prefix) {
         if(clazz == null) {
             throw new StructuraException("Cannot convert null class type.");
         }
@@ -440,7 +530,9 @@ public class ValueConverter {
         }
 
         if(!(value instanceof Map<?, ?>)) {
-            throw new StructuraException("Polymorphic type " + clazz.getName() + " requires a Map value for conversion.");
+            throw new StructuraException(StructuraException.Kind.WRONG_TYPE,
+                    "Polymorphic type " + clazz.getName() + " requires a Map value for conversion, but got "
+                            + describe(value), null);
         }
         //noinspection unchecked
         Map<String, Object> valueMap = (Map<String, Object>) value;
@@ -450,14 +542,16 @@ public class ValueConverter {
         PolymorphicRegistry<?> registry = PolymorphicRegistry.get(loadableClass);
 
         if (!valueMap.containsKey(key)) {
-            throw new StructuraException("Polymorphic type " + clazz.getName() + " requires key '" + key + "' in value map.");
+            throw new StructuraException(StructuraException.Kind.MISSING,
+                    "Polymorphic type " + clazz.getName() + " requires key '" + key + "' in value map.", null);
         }
 
         String typeName = valueMap.get(key).toString();
         return registry.get(typeName).orElseThrow(() ->
-                new StructuraException(
+                new StructuraException(StructuraException.Kind.WRONG_TYPE,
                         "No registered type found for " + typeName + " in polymorphic type " + loadableClass.getName() +
-                                ". Available types: " + String.join(", ", registry.availableNames())
+                                ". Available types: " + String.join(", ", registry.availableNames()),
+                        childPath(prefix, key)
                 )
         );
     }

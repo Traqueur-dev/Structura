@@ -86,10 +86,14 @@ public class Structura {
      * <p>Default settings:</p>
      * <ul>
      *   <li>Validation is enabled during parsing</li>
+     *   <li>A read stops at the first error</li>
+     *   <li>A key that no component reads is ignored</li>
      * </ul>
      */
     public static class StructuraBuilder {
         private boolean validateOnParse = true;
+        private boolean collectErrors = false;
+        private boolean strictKeys = false;
 
         /**
          * Sets whether to validate the configuration during parsing.
@@ -103,12 +107,44 @@ public class Structura {
         }
 
         /**
+         * Sets whether a read carries on past an error to report every error of the document at once.
+         *
+         * <p>When enabled, a document with errors throws a {@link fr.traqueur.structura.exceptions.StructuraErrors}
+         * listing them all, each with its path and position, so that a whole file is fixed in one go.</p>
+         *
+         * @param collect true to collect every error, false to stop at the first one (the default)
+         * @return this builder instance for method chaining
+         */
+        public StructuraBuilder collectErrors(boolean collect) {
+            this.collectErrors = collect;
+            return this;
+        }
+
+        /**
+         * Sets whether a key that no component reads is an error rather than silently ignored.
+         *
+         * <p>When enabled, a typo such as {@code max-item: 54} is reported as
+         * {@code unknown key 'max-item' under 'shop' (did you mean 'max-items'?)} instead of leaving
+         * the default value applied without anyone knowing. Inline components, key components,
+         * polymorphic sub-types, map values and list elements are all checked; the keys of a map are
+         * free, and an inline map absorbs every remaining key. A record can also be made strict on
+         * its own with {@link fr.traqueur.structura.annotations.Strict @Strict}.</p>
+         *
+         * @param strict true to refuse unknown keys, false to ignore them (the default)
+         * @return this builder instance for method chaining
+         */
+        public StructuraBuilder strictKeys(boolean strict) {
+            this.strictKeys = strict;
+            return this;
+        }
+
+        /**
          * Builds a new {@link StructuraProcessor} with the specified configurations.
          *
          * @return a new instance of {@link StructuraProcessor}
          */
         public StructuraProcessor build() {
-            return new StructuraProcessor(validateOnParse);
+            return new StructuraProcessor(validateOnParse, collectErrors, strictKeys);
         }
     }
 
@@ -157,6 +193,21 @@ public class Structura {
             case File f -> f.getAbsolutePath();
             case String s -> s;
             default -> "unknown";
+        };
+    }
+
+    /**
+     * Gets the name a source is shown under in the position of an error: the path as given.
+     *
+     * @param source the source object
+     * @return its name, such as {@code plugins/shop/config.yml}
+     */
+    private static String getDisplayName(Object source) {
+        return switch (source) {
+            case Path p -> p.toString();
+            case File f -> f.getPath();
+            case String s -> s;
+            default -> null;
         };
     }
 
@@ -242,7 +293,7 @@ public class Structura {
     private static <E extends Enum<E> & Loadable> void loadEnumInternal(Object source, Class<E> enumClass) {
         try {
             String content = readContent(source);
-            parseEnum(content, enumClass);
+            PROCESSOR.parseEnum(content, enumClass, getDisplayName(source));
         } catch (IOException e) {
             throw new StructuraException("Unable to read file: " + getSourceName(source), e);
         }
@@ -312,7 +363,7 @@ public class Structura {
     private static <T extends Loadable> T loadInternal(Object source, Class<T> configClass) {
         try {
             String content = readContent(source);
-            return parse(content, configClass);
+            return PROCESSOR.parse(content, configClass, getDisplayName(source));
         } catch (IOException e) {
             throw new StructuraException("Unable to read file: " + getSourceName(source), e);
         }

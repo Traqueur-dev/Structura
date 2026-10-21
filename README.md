@@ -1108,6 +1108,11 @@ fallback-providers:
 // Load enum from resources
 <E extends Enum<E> & Loadable> void loadEnumFromResource(String resourcePath, Class<E> enumClass)
 
+// --- Processor (Structura.builder()...build()) ---
+
+// Name the source in error positions ("shop.yml:3:12: ...")
+<T extends Loadable> T parse(String yamlContent, Class<T> configClass, String sourceName)
+
 // --- Writing (requires the structura-writer module) ---
 
 // Serialize a record to YAML and write it (creates parent dirs, overwrites)
@@ -1235,25 +1240,79 @@ Class<? super T> getRawType()
 
 ## 🚨 Error Handling
 
-Structura provides clear error messages for common configuration issues:
+Every error raised while reading a document says **where**: the path of the key, its line and column,
+the file it comes from, and a stable kind.
+
+```
+config.yml:3:12: 'many' is not a number (limits.per-day)
+config.yml:8:12: 'cheap' is not a number (offers[1].price)
+config.yml:6:5: 'symbol' is required but not provided (currencies.gems.symbol)
+```
 
 ```java
 try {
     AppConfig config = Structura.load(configPath, AppConfig.class);
 } catch (StructuraException e) {
-    // Handle configuration errors
-    logger.error("Configuration error: " + e.getMessage());
+    logger.error(e.getMessage());          // config.yml:3:12: 'many' is not a number (limits.per-day)
+
+    e.kind();      // UNKNOWN_KEY, MISSING, WRONG_TYPE, INVALID, READER, SYNTAX (OTHER for API misuse)
+    e.path();      // Optional[limits.per-day]
+    e.line();      // OptionalInt[3]   (1-based)
+    e.column();    // OptionalInt[12]  (1-based)
+    e.source();    // Optional[config.yml]
+    e.detail();    // 'many' is not a number
 }
 ```
 
-Common error scenarios:
-- Missing required fields
-- Type conversion failures
-- Invalid YAML syntax
-- File not found
-- Invalid enum values
-- **Unknown polymorphic types with available options listed**
-- **Missing polymorphic type keys**
+The kind is stable and meant for tools; the wording of a message may improve. An error raised outside
+of a document (a registry misuse, a direct call to the validator) keeps its plain message.
+
+### All errors at once
+
+By default a read stops at the first error. A processor built with `collectErrors(true)` carries on and
+reports every error of the document together, so a whole file is fixed in one go:
+
+```java
+StructuraProcessor processor = Structura.builder().collectErrors(true).build();
+
+try {
+    processor.parse(yaml, ShopSettings.class, "shop.yml");
+} catch (StructuraErrors e) {             // extends StructuraException
+    e.errors().forEach(error -> logger.error(error.getMessage()));
+}
+```
+
+```
+3 errors in shop.yml:
+  shop.yml:3:12: 'many' is not a number (limits.per-day)
+  shop.yml:8:5: 'item' is required but not provided (offers[1].item)
+  shop.yml:12:8: 'lots' is not a number (slots)
+```
+
+### Strict keys
+
+Structura ignores keys that no component reads, so a typo such as `max-item: 54` goes unnoticed and the
+default value applies. In strict mode an unknown key is an error, with the closest known key suggested:
+
+```java
+StructuraProcessor processor = Structura.builder().strictKeys(true).build();
+```
+
+```
+2:1: unknown key 'max-item' (did you mean 'max-items'?)
+3:3: unknown key 'per-dya' under 'limits' (did you mean 'per-day'?)
+```
+
+Structura knows exactly which keys each record reads: inline components, the `isKey` component,
+`@Options(name)`, polymorphic discriminators and the keys of the selected sub-type, map values and list
+elements. The keys of a `Map` stay free, and an inline `Map` absorbs every remaining key.
+
+A single record (and everything it reads) can be made strict without the option:
+
+```java
+@Strict
+public record ShopSettings(int maxItems, Limits limits) implements Loadable {}
+```
 
 ## 🧪 Testing
 
