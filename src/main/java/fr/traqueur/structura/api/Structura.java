@@ -3,9 +3,11 @@ package fr.traqueur.structura.api;
 import fr.traqueur.structura.StructuraProcessor;
 import fr.traqueur.structura.Updater;
 import fr.traqueur.structura.exceptions.StructuraException;
+import fr.traqueur.structura.mapping.FieldMapper;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.reflect.RecordComponent;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -147,6 +149,39 @@ public class Structura {
         public StructuraProcessor build() {
             return new StructuraProcessor(validateOnParse, collectErrors, strictKeys);
         }
+    }
+
+    /**
+     * The key a record component is read from — the exact rule Structura uses everywhere, for tools
+     * (a key checker, a schema generator) that must land on the same keys.
+     *
+     * <p>{@code @Options(name = "...")} when given; otherwise a hyphen goes between a lowercase letter
+     * and the uppercase letter that follows it, then the whole name is lowercased. Nothing else splits
+     * a name — not a digit, not a run of capitals:</p>
+     * <pre>
+     * maxItems     → max-items
+     * httpURL      → http-url
+     * HTTPServer   → httpserver
+     * myHTTPServer → my-httpserver
+     * level2Cap    → level2cap
+     * </pre>
+     *
+     * @param component the record component
+     * @return its key in the document
+     */
+    public static String keyOf(RecordComponent component) {
+        return FieldMapper.keyOf(component);
+    }
+
+    /**
+     * The key an enum constant is read from: its name, snake_case converted to kebab-case
+     * ({@code MYSQL_DATABASE → mysql-database}).
+     *
+     * @param constant the enum constant
+     * @return its key in the document
+     */
+    public static String keyOf(Enum<?> constant) {
+        return FieldMapper.keyOf(constant);
     }
 
     /**
