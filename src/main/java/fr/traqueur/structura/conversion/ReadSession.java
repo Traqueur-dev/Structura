@@ -1,12 +1,17 @@
 package fr.traqueur.structura.conversion;
 
+import fr.traqueur.structura.api.Loadable;
 import fr.traqueur.structura.exceptions.StructuraException;
+import fr.traqueur.structura.registries.CustomReaderRegistry;
+import fr.traqueur.structura.registries.PolymorphicRegistries;
+import fr.traqueur.structura.registries.PolymorphicRegistry;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Supplier;
 
@@ -24,6 +29,8 @@ public final class ReadSession {
 
     private final boolean collectErrors;
     private final boolean strictKeys;
+    private final CustomReaderRegistry readers;
+    private final PolymorphicRegistries polymorphics;
     private final List<StructuraException> errors = new ArrayList<>();
     private final Set<Map<?, ?>> sharedNodes = Collections.newSetFromMap(new IdentityHashMap<>());
     private int strictScopes;
@@ -40,8 +47,53 @@ public final class ReadSession {
      * @param strictKeys whether a key that no component reads is an error everywhere in the document
      */
     public ReadSession(boolean collectErrors, boolean strictKeys) {
+        this(collectErrors, strictKeys, null, null);
+    }
+
+    /**
+     * @param collectErrors whether errors are collected and reported together at the end of the read
+     * @param strictKeys whether a key that no component reads is an error everywhere in the document
+     * @param readers the processor's own reader registry, looked up before the global one, or null
+     * @param polymorphics the processor's own polymorphic registries, looked up before the global ones, or null
+     */
+    public ReadSession(boolean collectErrors, boolean strictKeys,
+                       CustomReaderRegistry readers, PolymorphicRegistries polymorphics) {
         this.collectErrors = collectErrors;
         this.strictKeys = strictKeys;
+        this.readers = readers;
+        this.polymorphics = polymorphics;
+    }
+
+    /**
+     * @return the reader registries of the current read, in lookup order: the processor's own, then the global one
+     */
+    public static List<CustomReaderRegistry> readerRegistries() {
+        ReadSession session = CURRENT.get();
+        CustomReaderRegistry global = CustomReaderRegistry.getInstance();
+        if (session == null || session.readers == null || session.readers == global) {
+            return List.of(global);
+        }
+        return List.of(session.readers, global);
+    }
+
+    /**
+     * The registry of a polymorphic interface for the current read: the processor's own if it has
+     * one for that interface, the global one otherwise.
+     *
+     * @param type the polymorphic interface
+     * @param <T> the polymorphic interface type
+     * @return its registry
+     * @throws StructuraException if no registry knows the interface
+     */
+    public static <T extends Loadable> PolymorphicRegistry<T> polymorphicRegistry(Class<T> type) {
+        ReadSession session = CURRENT.get();
+        if (session != null && session.polymorphics != null) {
+            Optional<PolymorphicRegistry<T>> own = session.polymorphics.find(type);
+            if (own.isPresent()) {
+                return own.get();
+            }
+        }
+        return PolymorphicRegistries.global().get(type);
     }
 
     /**
