@@ -2,6 +2,7 @@ package fr.traqueur.structura;
 
 import fr.traqueur.structura.annotations.Options;
 import fr.traqueur.structura.api.Loadable;
+import fr.traqueur.structura.api.Source;
 import fr.traqueur.structura.conversion.ReadSession;
 import fr.traqueur.structura.conversion.ValueConverter;
 import fr.traqueur.structura.document.YamlDocument;
@@ -104,7 +105,34 @@ public class StructuraProcessor {
     public <T extends Loadable> T parse(String yamlString, Class<T> settingsClass, String sourceName) {
         validateInput(yamlString, settingsClass);
 
-        YamlDocument document = document(yamlString, sourceName);
+        return parseDocument(document(yamlString, sourceName), settingsClass);
+    }
+
+    /**
+     * Parses a document read in layers, the last one on top: a default shipped in a jar, then the
+     * server's file. Sections are merged key by key at every depth; a list or a single value of an
+     * upper layer replaces the one below. No text is rewritten: each error names the layer, and the
+     * line in that layer, of the faulty value. Strict mode checks the keys of every layer.
+     *
+     * <pre>
+     * ShopSettings settings = processor.parse(List.of(
+     *         Source.of("config.yml (jar)", defaults),
+     *         Source.of("config.yml", server)
+     * ), ShopSettings.class);
+     * </pre>
+     *
+     * @param sources the layers, from the bottom (defaults) to the top (overrides); a layer may be empty
+     * @param settingsClass the target class (must be a record implementing Loadable)
+     * @param <T> the type of the target class
+     * @return the created instance populated with the merged data
+     * @throws StructuraException if parsing or validation fails, located in the layer at fault
+     */
+    public <T extends Loadable> T parse(List<Source> sources, Class<T> settingsClass) {
+        validateLayers(sources, settingsClass);
+        return parseDocument(layers(sources), settingsClass);
+    }
+
+    private <T extends Loadable> T parseDocument(YamlDocument document, Class<T> settingsClass) {
         return read(document, () -> {
             Map<String, Object> settings = rootSection(document.data());
 
@@ -116,6 +144,36 @@ public class StructuraProcessor {
 
             return instance;
         }, "Failed to parse YAML for class " + settingsClass.getName());
+    }
+
+    /**
+     * Reads every layer, then merges them. Syntax errors of all layers are reported together when
+     * errors are collected.
+     */
+    private YamlDocument layers(List<Source> sources) {
+        List<YamlDocument> documents = new ArrayList<>();
+        List<StructuraException> syntaxErrors = new ArrayList<>();
+        for (Source source : sources) {
+            try {
+                documents.add(YamlDocument.parse(source.text(), source.name()));
+            } catch (StructuraException e) {
+                if (!collectErrors) {
+                    throw e;
+                }
+                syntaxErrors.add(e);
+            }
+        }
+        if (!syntaxErrors.isEmpty()) {
+            throw new StructuraErrors(syntaxErrors);
+        }
+        return YamlDocument.merge(documents);
+    }
+
+    private void validateLayers(List<Source> sources, Class<?> targetClass) {
+        if (sources == null || sources.isEmpty()) {
+            throw new StructuraException("At least one source is required");
+        }
+        validateInput("layers", targetClass);
     }
 
     /**
@@ -212,7 +270,24 @@ public class StructuraProcessor {
     public <E extends Enum<E> & Loadable> void parseEnum(String yamlString, Class<E> enumClass, String sourceName) {
         validateInput(yamlString, enumClass);
 
-        YamlDocument document = document(yamlString, sourceName);
+        parseEnumDocument(document(yamlString, sourceName), enumClass);
+    }
+
+    /**
+     * Parses enum constant fields from a document read in layers, the last one on top.
+     *
+     * @param sources the layers, from the bottom (defaults) to the top (overrides)
+     * @param enumClass the enum class (must implement Loadable)
+     * @param <E> the type of the enum
+     * @throws StructuraException if parsing or validation fails, located in the layer at fault
+     * @see #parse(List, Class)
+     */
+    public <E extends Enum<E> & Loadable> void parseEnum(List<Source> sources, Class<E> enumClass) {
+        validateLayers(sources, enumClass);
+        parseEnumDocument(layers(sources), enumClass);
+    }
+
+    private <E extends Enum<E> & Loadable> void parseEnumDocument(YamlDocument document, Class<E> enumClass) {
         read(document, () -> {
             if (document.data() == null) {
                 throw new StructuraException("YAML content is empty or null for enum " + enumClass.getName());
