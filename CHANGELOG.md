@@ -3,6 +3,33 @@
 All notable changes to Structura. Versions follow [semantic versioning](https://semver.org):
 a minor version adds features without breaking existing code.
 
+## 2.7.0 — Nested validation and strict enums
+
+### Added
+
+- **`Structura.builder().validateNested(true)`** validates every record reached through a list or a set
+  (`offers[2].price`), a map value (`currencies.gems.symbol`), a polymorphic component, at any depth, and the
+  lists and maps of enum constants; each error has its path and line and is collected with `collectErrors`.
+  Off by default: configurations accepted before stay accepted.
+- **Strict enums.** With `strictKeys(true)` or `@Strict` on the enum, `parseEnum` reports a key that is no
+  constant and a key of a constant that none of its fields reads.
+- `UnknownKeys.error(...)` / `UnknownKeys.closestKey(...)`: the unknown-key error and its suggestion, public
+  for tools.
+
+### Fixed
+
+- An enum field of a generic type (`List<Offer> offers`) is converted with its type arguments; it used to
+  hold raw maps.
+
+### Messages, before and after
+
+| Case | 2.6.0 | 2.7.0 |
+|------|-------|-------|
+| `price: 0` on the second offer, `@Min(1)`, with `validateNested(true)` | *accepted* | `5:12: Value must be at least 1 (offers[1].price)` |
+| Same, without the option | *accepted* | *accepted* |
+| `gold-pluss:` in an enum file, strict | *ignored* | `7:1: unknown key 'gold-pluss' (did you mean 'gold-plus'?)` |
+| `treshold: 10` under a constant, strict | *ignored* | `3:3: unknown key 'treshold' under 'bronze' (did you mean 'threshold'?)` |
+
 ## 2.6.0 — A writer that keeps the file as written
 
 What the writer did in 2.5.0, checked against the three needs of an in-game editor:
