@@ -1,13 +1,18 @@
 package fr.traqueur.structura.registries;
 
 import fr.traqueur.structura.exceptions.StructuraException;
+import fr.traqueur.structura.readers.ContextualReader;
+import fr.traqueur.structura.readers.ReadContext;
 import fr.traqueur.structura.readers.Reader;
 import fr.traqueur.structura.types.TypeToken;
 
 import java.lang.reflect.Type;
+import java.util.Collection;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.function.Function;
 
 /**
  * Registry for custom type readers that convert String values to custom types.
@@ -61,12 +66,16 @@ public class CustomReaderRegistry {
 
     // Single map using TypeToken for unified type handling
     private final ConcurrentMap<TypeToken<?>, Reader<?>> readers;
+    private final ConcurrentMap<TypeToken<?>, ContextualReader<?>> contextualReaders;
+    private final ConcurrentMap<Class<?>, ContextualReader<?>> genericReaders;
 
     /**
      * Private constructor to enforce singleton pattern.
      */
     private CustomReaderRegistry() {
         this.readers = new ConcurrentHashMap<>();
+        this.contextualReaders = new ConcurrentHashMap<>();
+        this.genericReaders = new ConcurrentHashMap<>();
     }
 
     /**
@@ -113,7 +122,7 @@ public class CustomReaderRegistry {
 
         // Convert Class to TypeToken for unified internal handling
         TypeToken<T> token = TypeToken.of(targetClass);
-        if (readers.containsKey(token)) {
+        if (readers.containsKey(token) || contextualReaders.containsKey(token)) {
             throw new StructuraException("A reader is already registered for class " + targetClass.getName());
         }
         readers.put(token, reader);
@@ -145,10 +154,80 @@ public class CustomReaderRegistry {
             throw new StructuraException("Cannot register null reader for type " + typeToken.getType());
         }
 
-        if (readers.containsKey(typeToken)) {
+        if (readers.containsKey(typeToken) || contextualReaders.containsKey(typeToken)) {
             throw new StructuraException("A reader is already registered for type " + typeToken.getType());
         }
         readers.put(typeToken, reader);
+    }
+
+    /**
+     * Registers a reader that sees the value as YAML typed it ({@code amount: 100} as well as
+     * {@code amount: "100"}), the full type requested and the path of the value.
+     *
+     * @param targetClass the class of the target type
+     * @param reader the reader
+     * @param <T> the type to convert to
+     * @throws StructuraException if targetClass or reader is null, or if a reader is already registered
+     * @see ContextualReader
+     */
+    public <T> void registerContextual(Class<T> targetClass, ContextualReader<T> reader) {
+        validateNonNull(targetClass, "class", "register reader");
+        registerContextual(TypeToken.of(targetClass), reader);
+    }
+
+    /**
+     * Registers a reader that sees the value as YAML typed it, for an exact generic type.
+     *
+     * @param typeToken the TypeToken representing the type, such as {@code new TypeToken<List<Team>>() {}}
+     * @param reader the reader
+     * @param <T> the type to convert to
+     * @throws StructuraException if typeToken or reader is null, or if a reader is already registered
+     * @see ContextualReader
+     */
+    public <T> void registerContextual(TypeToken<T> typeToken, ContextualReader<T> reader) {
+        validateNonNull(typeToken, "TypeToken", "register reader");
+        if (reader == null) {
+            throw new StructuraException("Cannot register null reader for type " + typeToken.getType());
+        }
+        if (readers.containsKey(typeToken) || contextualReaders.containsKey(typeToken)) {
+            throw new StructuraException("A reader is already registered for type " + typeToken.getType());
+        }
+        contextualReaders.put(typeToken, reader);
+    }
+
+    /**
+     * Registers one reader for every parameterization of a generic type: a reader registered for
+     * {@code Resolvable.class} reads {@code Resolvable<Integer>}, {@code Resolvable<Team>}… and finds
+     * the type requested in {@link ReadContext#target()}. A reader registered for an exact type
+     * ({@link #register(TypeToken, Reader)}) wins over the generic one.
+     *
+     * <pre>
+     * registry.registerGeneric(Resolvable.class, ctx -&gt; Resolvable.of(ctx.convert(ctx.typeArgument(0))));
+     * </pre>
+     *
+     * @param rawType the generic type, such as {@code Resolvable.class}
+     * @param reader the reader, given the full requested type
+     * @throws StructuraException if rawType or reader is null, or if a generic reader is already registered
+     */
+    public void registerGeneric(Class<?> rawType, ContextualReader<?> reader) {
+        validateNonNull(rawType, "class", "register generic reader");
+        if (reader == null) {
+            throw new StructuraException("Cannot register null reader for class " + rawType.getName());
+        }
+        if (genericReaders.putIfAbsent(rawType, reader) != null) {
+            throw new StructuraException("A generic reader is already registered for class " + rawType.getName());
+        }
+    }
+
+    /**
+     * Unregisters the generic reader of a type.
+     *
+     * @param rawType the generic type
+     * @return true if a reader was removed
+     */
+    public boolean unregisterGeneric(Class<?> rawType) {
+        validateNonNull(rawType, "class", "unregister generic reader");
+        return genericReaders.remove(rawType) != null;
     }
 
     /**
@@ -160,7 +239,9 @@ public class CustomReaderRegistry {
      */
     public boolean unregister(Class<?> targetClass) {
         validateNonNull(targetClass, "class", "unregister reader");
-        return readers.remove(TypeToken.of(targetClass)) != null;
+        TypeToken<?> token = TypeToken.of(targetClass);
+        boolean removed = readers.remove(token) != null;
+        return contextualReaders.remove(token) != null || removed;
     }
 
     /**
@@ -172,7 +253,8 @@ public class CustomReaderRegistry {
      */
     public boolean unregister(TypeToken<?> typeToken) {
         validateNonNull(typeToken, "TypeToken", "unregister reader");
-        return readers.remove(typeToken) != null;
+        boolean removed = readers.remove(typeToken) != null;
+        return contextualReaders.remove(typeToken) != null || removed;
     }
 
     /**
@@ -185,7 +267,8 @@ public class CustomReaderRegistry {
         if (targetClass == null) {
             return false;
         }
-        return readers.containsKey(TypeToken.of(targetClass));
+        TypeToken<?> token = TypeToken.of(targetClass);
+        return readers.containsKey(token) || contextualReaders.containsKey(token) || genericReaders.containsKey(targetClass);
     }
 
     /**
@@ -198,7 +281,8 @@ public class CustomReaderRegistry {
         if (typeToken == null) {
             return false;
         }
-        return readers.containsKey(typeToken);
+        return readers.containsKey(typeToken) || contextualReaders.containsKey(typeToken)
+                || genericReaders.containsKey(typeToken.getRawType());
     }
 
     /**
@@ -277,11 +361,115 @@ public class CustomReaderRegistry {
     }
 
     /**
+     * Reads a value of the document with the registered readers, as the conversion does.
+     *
+     * <p>Unlike {@link #convert(Object, Type, Class)}, which only hands strings to a reader, a value
+     * reaches a reader as YAML typed it: a {@link ContextualReader} receives any value, a {@link Reader}
+     * receives the text of a scalar ({@code amount: 100} as {@code "100"}) unless the value already has
+     * the requested type. Lookup order: a reader for the exact type, then for its raw class, then the
+     * generic reader of its raw class.</p>
+     *
+     * @param value the value as read from the document
+     * @param genericType the full type requested
+     * @param targetClass the raw type requested
+     * @param path the path of the value in the document
+     * @param converter converts the value to another type with Structura's rules, for {@link ReadContext#convert}
+     * @return the value read, or empty if no reader applies
+     * @throws StructuraException of kind READER if the reader fails
+     */
+    public Optional<Object> read(Object value, Type genericType, Class<?> targetClass, String path,
+                                 Function<Type, Object> converter) {
+        if (value == null || targetClass == null) {
+            return Optional.empty();
+        }
+        Type requested = genericType != null ? genericType : targetClass;
+        TypeToken<?> token = TypeToken.of(requested);
+
+        Optional<Object> result = readWith(token, value, requested, targetClass, path, converter);
+        if (result.isEmpty() && !requested.equals(targetClass)) {
+            result = readWith(TypeToken.of(targetClass), value, requested, targetClass, path, converter);
+        }
+        if (result.isEmpty()) {
+            ContextualReader<?> generic = genericReaders.get(targetClass);
+            if (generic != null) {
+                result = Optional.of(invoke(generic, value, requested, path, converter));
+            }
+        }
+        return result;
+    }
+
+    private Optional<Object> readWith(TypeToken<?> token, Object value, Type requested, Class<?> targetClass,
+                                      String path, Function<Type, Object> converter) {
+        ContextualReader<?> contextual = contextualReaders.get(token);
+        if (contextual != null) {
+            return Optional.of(invoke(contextual, value, requested, path, converter));
+        }
+        Reader<?> reader = readers.get(token);
+        if (reader == null || !isScalar(value) || (!(value instanceof String) && wrap(targetClass).isInstance(value))) {
+            return Optional.empty();
+        }
+        String text = String.valueOf(value);
+        return Optional.of(invoke(context -> reader.read(text), value, requested, path, converter));
+    }
+
+    private Object invoke(ContextualReader<?> reader, Object value, Type requested, String path,
+                          Function<Type, Object> converter) {
+        try {
+            return reader.read(new Context(value, requested, path, converter));
+        } catch (Exception e) {
+            String reason = e instanceof StructuraException structuraException
+                    ? structuraException.detail()
+                    : e.getMessage();
+            throw new StructuraException(StructuraException.Kind.READER,
+                    "Failed to convert value '" + value + "' to type " + requested.getTypeName() +
+                            " using custom reader" + (reason != null ? ": " + reason : ""), path, e);
+        }
+    }
+
+    private static boolean isScalar(Object value) {
+        return !(value instanceof Map<?, ?>) && !(value instanceof Collection<?>);
+    }
+
+    private static Class<?> wrap(Class<?> type) {
+        if (!type.isPrimitive()) return type;
+        if (type == int.class) return Integer.class;
+        if (type == long.class) return Long.class;
+        if (type == double.class) return Double.class;
+        if (type == float.class) return Float.class;
+        if (type == boolean.class) return Boolean.class;
+        if (type == short.class) return Short.class;
+        if (type == byte.class) return Byte.class;
+        if (type == char.class) return Character.class;
+        return type;
+    }
+
+    private record Context(Object raw, Type type, String path, Function<Type, Object> converter)
+            implements ReadContext {
+
+        @Override
+        public String text() {
+            return String.valueOf(raw);
+        }
+
+        @Override
+        public TypeToken<?> target() {
+            return TypeToken.of(type);
+        }
+
+        @Override
+        public Object convert(Type type) {
+            return converter.apply(type);
+        }
+    }
+
+    /**
      * Removes all registered readers.
      * This is primarily useful for testing.
      */
     public void clear() {
         readers.clear();
+        contextualReaders.clear();
+        genericReaders.clear();
     }
 
     /**
@@ -290,6 +478,6 @@ public class CustomReaderRegistry {
      * @return the count of registered readers
      */
     public int size() {
-        return readers.size();
+        return readers.size() + contextualReaders.size() + genericReaders.size();
     }
 }
