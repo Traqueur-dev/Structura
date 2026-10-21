@@ -15,6 +15,9 @@ import java.lang.annotation.Target;
  * <pre>
  * 3:3: unknown key 'max-item' under 'shop' (did you mean 'max-items'?)
  * </pre>
+ *
+ * <p>On a configurable enum, a key that is no constant and a key of a constant that none of its
+ * fields reads are both errors.</p>
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
