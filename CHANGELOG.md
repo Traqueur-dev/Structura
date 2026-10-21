@@ -3,6 +3,33 @@
 All notable changes to Structura. Versions follow [semantic versioning](https://semver.org):
 a minor version adds features without breaking existing code.
 
+## 2.6.0 — A writer that keeps the file as written
+
+What the writer did in 2.5.0, checked against the three needs of an in-game editor:
+
+| Need | 2.5.0 | 2.6.0 |
+|------|-------|-------|
+| Rewrite a file keeping its comments and the order of its keys | No: `write` rebuilt the file, comments lost, keys in declaration order | `Structura.update(file, config)` |
+| Write only what differs from the jar default, like the server file | No: the whole record was written | `Structura.writeOverrides(file, config, defaults)` |
+| Use the same key names as the reader | Yes (same `FieldMapper`) | Yes, now tested against `Structura.keyOf` and a strict read |
+
+### Added (`structura-writer`)
+
+- **`Structura.update(Path, Loadable)`** rewrites a file with new values while keeping comments, key
+  order and the quoting of unchanged values; a removed key goes away, a new key goes after the others, list
+  indentation follows the file. Creates the file if needed.
+- **`Structura.writeOverrides(Path, Loadable config, Loadable defaults)`** writes only what differs from the
+  defaults — sections key by key, lists and values as a whole, as layered reading merges them — keeping the
+  comments already in the file.
+- `StructuraWriter#update` and `#writeOverrides`, as default methods of the SPI.
+
+### Limits
+
+- The comments attached to a removed key go with it.
+- SnakeYAML reduces the spaces before an end-of-line comment to one.
+- `writeOverrides` cannot express that a key of a map present in the default was removed: layered
+  reading merges maps key by key.
+
 ## 2.5.0 — Keys, schema and registries per processor
 
 ### Added
