@@ -36,6 +36,8 @@ final class JsonSchemaWriter {
                     values.add(value);
                     String lower = value.toLowerCase(Locale.ROOT);
                     if (!lower.equals(value)) values.add(lower);
+                    String kebab = lower.replace('_', '-');
+                    if (!kebab.equals(lower)) values.add(kebab);
                 }
                 json.put("enum", values);
             }
