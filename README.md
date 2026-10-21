@@ -1476,14 +1476,18 @@ public record ShopSettings(int maxItems, Limits limits) implements Loadable {}
 
 ### Validating nested records
 
-By default, validation checks the components of a record and the records declared as its components. A
-`@Min` on the price of each element of a `List<Offer>`, on a map value or on a polymorphic sub-type is not
-checked, so that configurations accepted before 2.7.0 stay accepted. Turn it on with:
+Validation descends into every record held by a list or a set, a map value or a polymorphic component, at
+any depth: a `@Min` on the price of each element of a `List<Offer>` is enforced.
+
+```
+5:12: Value must be at least 1 (offers[1].price)
+8:13: Value cannot be empty (currencies.gems.symbol)
+```
+
+To validate only the components declared as records, as before 2.8.0:
 
 ```java
-StructuraProcessor processor = Structura.builder().validateNested(true).build();
-// 5:12: Value must be at least 1 (offers[1].price)
-// 8:13: Value cannot be empty (currencies.gems.symbol)
+StructuraProcessor processor = Structura.builder().validateNested(false).build();
 ```
 
 ## 🧪 Testing

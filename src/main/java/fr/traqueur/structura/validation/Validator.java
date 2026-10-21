@@ -56,17 +56,18 @@ public class Validator {
      * @param documentPath The path of the instance in the document, or null when it was not read from one.
      */
     public void validate(Object instance, String path, String documentPath) {
-        validate(instance, path, documentPath, false);
+        validate(instance, path, documentPath, true);
     }
 
     /**
      * Validates the given instance, optionally descending into the records held by its lists, sets
      * and maps, and into polymorphic components.
      *
-     * <p>Without {@code nested}, only the components and the nested records declared as such are
-     * validated, as before 2.7.0: a {@code @Min} on the price of each offer of a {@code List<Offer>}
-     * is not checked. With it, every record reached through a list ({@code offers[2].price}), a map
-     * value ({@code currencies.gems.symbol}) or a polymorphic component is validated too.</p>
+     * <p>With {@code nested} (the default of the other overloads since 2.8.0), every record reached
+     * through a list ({@code offers[2].price}), a map value ({@code currencies.gems.symbol}) or a
+     * polymorphic component is validated too. Without it, only the components and the nested records
+     * declared as such are, as before: a {@code @Min} on the price of each offer of a
+     * {@code List<Offer>} is not checked.</p>
      *
      * @param instance The instance to validate.
      * @param path The path for error messages.
