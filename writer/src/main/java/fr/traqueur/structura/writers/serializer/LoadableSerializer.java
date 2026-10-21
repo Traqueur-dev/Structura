@@ -62,6 +62,18 @@ public class LoadableSerializer {
         this.yaml = new Yaml(opts);
     }
 
+    /**
+     * Converts {@code config} to the plain YAML values it is written as: maps with the same keys the
+     * reader reads, lists and scalars.
+     *
+     * @param config the record to convert
+     * @return its content, in the order of its components
+     */
+    public Map<String, Object> toData(Loadable config) {
+        Objects.requireNonNull(config, "config cannot be null");
+        return toMap(config);
+    }
+
     /** Serializes {@code config} to a block-style YAML string. */
     public String toYaml(Loadable config) {
         Objects.requireNonNull(config, "config cannot be null");

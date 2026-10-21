@@ -56,4 +56,30 @@ public interface StructuraWriter {
      * @param <T>         a record type implementing {@link Loadable}
      */
     <T extends Loadable> void saveDefault(Path file, Class<T> configClass);
+
+    /**
+     * Rewrites {@code file} with {@code config}, keeping what a person wrote in it: comments, the order
+     * of the keys, the quoting of unchanged values. A key the configuration no longer has is removed,
+     * a new key goes after the existing ones. Creates the file if it does not exist.
+     *
+     * @param file the file to rewrite
+     * @param config the configuration to write
+     */
+    default void update(Path file, Loadable config) {
+        throw new UnsupportedOperationException("This writer does not support update()");
+    }
+
+    /**
+     * Writes into {@code file} only what {@code config} changes from {@code defaults} — the shape of a
+     * server file read over the default shipped in a jar — keeping the comments and the order of the
+     * keys already in the file. Sections are compared key by key, lists and values as a whole, exactly
+     * as layered reading merges them.
+     *
+     * @param file the file to rewrite
+     * @param config the configuration to write
+     * @param defaults the defaults it is read over, of the same type
+     */
+    default void writeOverrides(Path file, Loadable config, Loadable defaults) {
+        throw new UnsupportedOperationException("This writer does not support writeOverrides()");
+    }
 }

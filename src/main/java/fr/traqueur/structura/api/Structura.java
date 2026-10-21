@@ -505,6 +505,48 @@ public class Structura {
     }
 
     /**
+     * Rewrites {@code file} with {@code config} while keeping what a person wrote in it: comments, the
+     * order of the keys, the quoting of unchanged values. A key the configuration no longer has is
+     * removed, a new key goes after the existing ones. Creates the file if it does not exist. Keys are
+     * written with the same names the reader reads ({@link #keyOf(RecordComponent)}).
+     *
+     * <p>Limits, from SnakeYAML's comment support: the comments attached to a removed key go with it,
+     * and the spaces before a comment at the end of a line are reduced to one.</p>
+     *
+     * <p>Requires the {@code structura-writer} module on the classpath.</p>
+     *
+     * @param file   the file to rewrite
+     * @param config the configuration to write
+     * @throws StructuraException if the writers module is absent or the write fails
+     */
+    public static void update(Path file, Loadable config) {
+        requireWriter().update(file, config);
+    }
+
+    /**
+     * Writes into {@code file} only what {@code config} changes from {@code defaults} — the shape of a
+     * server file read over the default shipped in a jar ({@link #parse(List, Class)}) — keeping the
+     * comments and the order of the keys already in the file. Sections are compared key by key, lists
+     * and values as a whole, as layered reading merges them: reading the file over the defaults gives
+     * {@code config} back.
+     *
+     * <pre>
+     * ShopSettings defaults = Structura.parse(List.of(Source.ofResource("/config.yml")), ShopSettings.class);
+     * Structura.writeOverrides(dataFolder.resolve("config.yml"), edited, defaults);
+     * </pre>
+     *
+     * <p>Requires the {@code structura-writer} module on the classpath.</p>
+     *
+     * @param file     the server file to rewrite
+     * @param config   the configuration to write
+     * @param defaults the defaults it is read over, of the same type
+     * @throws StructuraException if the writers module is absent or the write fails
+     */
+    public static void writeOverrides(Path file, Loadable config, Loadable defaults) {
+        requireWriter().writeOverrides(file, config, defaults);
+    }
+
+    /**
      * Builds a default instance of {@code configClass} from its {@code @Default*} annotations,
      * then writes it to {@code file}.
      *
