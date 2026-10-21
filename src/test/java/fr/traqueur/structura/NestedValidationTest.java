@@ -19,7 +19,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * With validateNested(true), the records held by lists, maps and polymorphic components are validated.
+ * The records held by lists, maps and polymorphic components are validated (on by default since 2.8.0).
  */
 @DisplayName("Nested validation")
 class NestedValidationTest {
@@ -88,9 +88,18 @@ class NestedValidationTest {
     }
 
     @Test
-    @DisplayName("without the option, nested records are not validated, as before")
-    void offByDefault() {
-        Shop shop = Structura.builder().polymorphics(TYPES).build().parse(YAML, Shop.class);
+    @DisplayName("is on by default")
+    void onByDefault() {
+        StructuraException error = assertThrows(StructuraException.class,
+                () -> Structura.builder().polymorphics(TYPES).build().parse(YAML, Shop.class));
+
+        assertEquals("offers[1].price", error.path().orElseThrow());
+    }
+
+    @Test
+    @DisplayName("validateNested(false) validates only the components declared as records, as before 2.8.0")
+    void canBeTurnedOff() {
+        Shop shop = Structura.builder().polymorphics(TYPES).validateNested(false).build().parse(YAML, Shop.class);
 
         assertEquals(0, shop.offers().get(1).price());
     }

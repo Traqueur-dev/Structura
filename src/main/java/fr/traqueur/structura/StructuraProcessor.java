@@ -98,7 +98,7 @@ public class StructuraProcessor {
      */
     public StructuraProcessor(boolean validateOnParse, boolean collectErrors, boolean strictKeys,
                               CustomReaderRegistry readers, PolymorphicRegistries polymorphics) {
-        this(validateOnParse, collectErrors, strictKeys, readers, polymorphics, false);
+        this(validateOnParse, collectErrors, strictKeys, readers, polymorphics, true);
     }
 
     /**

@@ -94,6 +94,7 @@ public class Structura {
      *   <li>Validation is enabled during parsing</li>
      *   <li>A read stops at the first error</li>
      *   <li>A key that no component reads is ignored</li>
+     *   <li>Validation descends into the records held by lists, maps and polymorphic components</li>
      * </ul>
      */
     public static class StructuraBuilder {
@@ -102,7 +103,7 @@ public class Structura {
         private boolean strictKeys = false;
         private CustomReaderRegistry readers;
         private PolymorphicRegistries polymorphics;
-        private boolean validateNested = false;
+        private boolean validateNested = true;
 
         /**
          * Sets whether to validate the configuration during parsing.
@@ -152,9 +153,10 @@ public class Structura {
          * components: a {@code @Min(1)} on the price of each element of a {@code List<Offer>} is then
          * enforced, reported as {@code offers[2].price}.
          *
-         * <p>Off by default so that configurations accepted before 2.7.0 stay accepted.</p>
+         * <p>On by default since 2.8.0; pass {@code false} to validate only the components declared as
+         * records, as before.</p>
          *
-         * @param nested true to validate nested records too
+         * @param nested true to validate nested records too (the default), false to skip them
          * @return this builder instance for method chaining
          */
         public StructuraBuilder validateNested(boolean nested) {
