@@ -102,6 +102,7 @@ public class Structura {
         private boolean strictKeys = false;
         private CustomReaderRegistry readers;
         private PolymorphicRegistries polymorphics;
+        private boolean validateNested = false;
 
         /**
          * Sets whether to validate the configuration during parsing.
@@ -147,6 +148,21 @@ public class Structura {
         }
 
         /**
+         * Sets whether validation also checks the records held by lists, sets, maps and polymorphic
+         * components: a {@code @Min(1)} on the price of each element of a {@code List<Offer>} is then
+         * enforced, reported as {@code offers[2].price}.
+         *
+         * <p>Off by default so that configurations accepted before 2.7.0 stay accepted.</p>
+         *
+         * @param nested true to validate nested records too
+         * @return this builder instance for method chaining
+         */
+        public StructuraBuilder validateNested(boolean nested) {
+            this.validateNested = nested;
+            return this;
+        }
+
+        /**
          * Gives the processor a reader registry of its own, looked up before the global one, so that two
          * plugins of the same server, or two tests running in parallel, do not share their readers.
          *
@@ -187,7 +203,8 @@ public class Structura {
          * @return a new instance of {@link StructuraProcessor}
          */
         public StructuraProcessor build() {
-            return new StructuraProcessor(validateOnParse, collectErrors, strictKeys, readers, polymorphics);
+            return new StructuraProcessor(validateOnParse, collectErrors, strictKeys, readers, polymorphics,
+                    validateNested);
         }
     }
 
