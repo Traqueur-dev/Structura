@@ -968,6 +968,32 @@ CustomWriterRegistry.getInstance().register(
 
 A `Writer<T>` converts a Java value to its YAML-serializable form (a String, Number, Map, List, etc.). Pair it with a matching `CustomReaderRegistry` entry to keep your custom type fully round-trippable.
 
+A writer registered for a class or an interface also serves its subclasses and implementations — the value of
+a `Component` field is an internal implementation of `Component`, and the closest registered type wins.
+
+A **contextual writer** also knows the type declared for the value and its path, and hands the values it holds
+back to Structura — the symmetric of a contextual reader. One writer for `Resolvable.class` serves every
+`Resolvable<T>`:
+
+```java
+CustomWriterRegistry.getInstance().registerContextual(Resolvable.class, (resolvable, ctx) ->
+        resolvable.isPlaceholder()
+                ? resolvable.placeholder()                              // "%server_pvp%"
+                : ctx.write(resolvable.value(), ctx.typeArgument(0)));  // Team record, enum, list... by Structura's rules
+// ctx.target() → Resolvable<Team>, ctx.path() → "rules.owner"
+```
+
+A failing writer names the path of the value: `Writer failed for Resolvable at rules.owner: ...`.
+
+A writer can have registries of its own, looked up before the global ones:
+
+```java
+CustomWriterRegistry writers = CustomWriterRegistry.create();
+writers.register(Component.class, MiniMessage.miniMessage()::serialize);
+StructuraWriter writer = YamlStructuraWriter.with(writers, polymorphicRegistries);
+writer.update(file, config);
+```
+
 ### Layered Sources (defaults + overrides)
 
 Read a default shipped in the jar and the server's file on top of it, in one call and without rewriting
