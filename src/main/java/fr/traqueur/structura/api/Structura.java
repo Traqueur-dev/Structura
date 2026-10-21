@@ -6,6 +6,7 @@ import fr.traqueur.structura.exceptions.StructuraException;
 import fr.traqueur.structura.mapping.FieldMapper;
 import fr.traqueur.structura.registries.CustomReaderRegistry;
 import fr.traqueur.structura.registries.PolymorphicRegistries;
+import fr.traqueur.structura.schema.Schema;
 
 import java.io.File;
 import java.io.IOException;
@@ -221,6 +222,23 @@ public class Structura {
      */
     public static String keyOf(Enum<?> constant) {
         return FieldMapper.keyOf(constant);
+    }
+
+    /**
+     * Describes what a record reads, without reimplementing the walk: each key as written in the
+     * document, its type, whether it is required, its default value and its description
+     * ({@link fr.traqueur.structura.annotations.Description @Description} or {@code @Options(description)}),
+     * the sub-types of a polymorphic value, the elements of a list and the values of a map.
+     *
+     * <pre>
+     * Files.writeString(Path.of("shop.schema.json"), Structura.schema(ShopSettings.class).toJsonSchema());
+     * </pre>
+     *
+     * @param type a record implementing Loadable, or an enum implementing Loadable
+     * @return its schema
+     */
+    public static Schema schema(Class<?> type) {
+        return PROCESSOR.schema(type);
     }
 
     /**

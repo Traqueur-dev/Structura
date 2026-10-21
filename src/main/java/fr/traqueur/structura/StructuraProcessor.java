@@ -13,6 +13,10 @@ import fr.traqueur.structura.mapping.FieldMapper;
 import fr.traqueur.structura.registries.CustomReaderRegistry;
 import fr.traqueur.structura.registries.DefaultValueRegistry;
 import fr.traqueur.structura.registries.PolymorphicRegistries;
+import fr.traqueur.structura.registries.PolymorphicRegistry;
+import fr.traqueur.structura.schema.Schema;
+import fr.traqueur.structura.schema.SchemaBuilder;
+import fr.traqueur.structura.types.TypeToken;
 import fr.traqueur.structura.validation.Validator;
 
 import java.lang.reflect.Field;
@@ -23,6 +27,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -99,6 +104,29 @@ public class StructuraProcessor {
 
         this.valueConverter = new ValueConverter(recordFactory);
         recordFactory.setValueConverter(valueConverter);
+    }
+
+    /**
+     * Describes what a record reads, with this processor's registries: keys, types, required keys,
+     * defaults, descriptions, polymorphic sub-types, list elements and map values.
+     *
+     * @param type a record implementing Loadable, or an enum implementing Loadable
+     * @return its schema; {@link Schema#toJsonSchema()} renders it for editors
+     */
+    public Schema schema(Class<?> type) {
+        return new SchemaBuilder(
+                polymorphicType -> {
+                    if (polymorphics != null) {
+                        Optional<? extends PolymorphicRegistry<?>> own = polymorphics.find(polymorphicType);
+                        if (own.isPresent()) {
+                            return Optional.of(own.get());
+                        }
+                    }
+                    return PolymorphicRegistries.global().find(polymorphicType).map(registry -> registry);
+                },
+                javaType -> (readers != null && readers.hasReader(TypeToken.of(javaType)))
+                        || CustomReaderRegistry.getInstance().hasReader(TypeToken.of(javaType))
+        ).describe(type);
     }
 
     /**
