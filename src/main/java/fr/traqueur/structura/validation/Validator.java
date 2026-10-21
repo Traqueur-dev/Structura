@@ -56,15 +56,57 @@ public class Validator {
      * @param documentPath The path of the instance in the document, or null when it was not read from one.
      */
     public void validate(Object instance, String path, String documentPath) {
+        validate(instance, path, documentPath, false);
+    }
+
+    /**
+     * Validates the given instance, optionally descending into the records held by its lists, sets
+     * and maps, and into polymorphic components.
+     *
+     * <p>Without {@code nested}, only the components and the nested records declared as such are
+     * validated, as before 2.7.0: a {@code @Min} on the price of each offer of a {@code List<Offer>}
+     * is not checked. With it, every record reached through a list ({@code offers[2].price}), a map
+     * value ({@code currencies.gems.symbol}) or a polymorphic component is validated too.</p>
+     *
+     * @param instance The instance to validate.
+     * @param path The path for error messages.
+     * @param documentPath The path of the instance in the document, or null when it was not read from one.
+     * @param nested whether to validate the records held by lists, maps and polymorphic components
+     */
+    public void validate(Object instance, String path, String documentPath, boolean nested) {
         if (instance == null) return;
 
         Class<?> clazz = instance.getClass();
 
         if (clazz.isRecord()) {
-            validateRecord(instance, path, documentPath);
-        } else if (clazz.isEnum()) {
-            validateEnum(instance, path, documentPath);
+            validateRecord(instance, path, documentPath, nested);
+        } else if (clazz.isEnum() || (clazz.getSuperclass() != null && clazz.getSuperclass().isEnum())) {
+            validateEnum(instance, path, documentPath, nested);
         }
+    }
+
+    /**
+     * Validates what a value holds: a record, or the records of a list, a set or a map, at any depth.
+     */
+    private void validateContent(Object value, String path, String documentPath) {
+        if (value instanceof Record && value instanceof Loadable) {
+            validate(value, path, documentPath, true);
+        } else if (value instanceof Collection<?> collection) {
+            int index = 0;
+            for (Object element : collection) {
+                String suffix = "[" + index++ + "]";
+                validateContent(element, path + suffix, documentPath == null ? null : documentPath + suffix);
+            }
+        } else if (value instanceof Map<?, ?> map) {
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                String key = String.valueOf(entry.getKey());
+                validateContent(entry.getValue(), join(path, key), documentPath == null ? null : join(documentPath, key));
+            }
+        }
+    }
+
+    private static String join(String path, String key) {
+        return path.isEmpty() ? key : path + "." + key;
     }
 
     /**
@@ -74,7 +116,7 @@ public class Validator {
      * @param path The path for error messages.
      * @throws ValidationException if validation fails.
      */
-    private void validateRecord(Object record, String path, String documentPath) {
+    private void validateRecord(Object record, String path, String documentPath, boolean nested) {
         Class<?> recordClass = record.getClass();
         RecordComponent[] components = recordClass.getRecordComponents();
 
@@ -88,8 +130,10 @@ public class Validator {
 
                 validateField(component.getType(), value, component, fieldPath);
 
-                if (value != null && isSettingsType(component.getType())) {
-                    validate(value, fieldPath, fieldDocumentPath);
+                if (value != null && nested) {
+                    validateContent(value, fieldPath, fieldDocumentPath);
+                } else if (value != null && isSettingsType(component.getType())) {
+                    validate(value, fieldPath, fieldDocumentPath, false);
                 }
             } catch (ReflectiveOperationException e) {
                 throw new ValidationException("Failed to validate field: " + component.getName(), e);
@@ -120,7 +164,7 @@ public class Validator {
      * @param enumInstance The enum instance to validate.
      * @param path The path for error messages.
      */
-    private void validateEnum(Object enumInstance, String path, String documentPath) {
+    private void validateEnum(Object enumInstance, String path, String documentPath, boolean nested) {
         Class<?> enumClass = enumInstance.getClass();
         Field[] fields = enumClass.getDeclaredFields();
 
@@ -135,6 +179,14 @@ public class Validator {
                 String fieldPath = path.isEmpty() ? field.getName() : path + "." + field.getName();
 
                 validateField(enumClass, value, field, fieldPath);
+
+                if (value != null && nested) {
+                    Options options = field.getAnnotation(Options.class);
+                    String fieldDocumentPath = documentPath == null ? null
+                            : options != null && options.inline() ? documentPath
+                            : join(documentPath, new FieldMapper().getFieldNameFromField(field));
+                    validateContent(value, fieldPath, fieldDocumentPath);
+                }
             } catch (IllegalAccessException e) {
                 throw new ValidationException("Failed to validate enum field: " + field.getName(), e);
             } catch (ValidationException e) {
