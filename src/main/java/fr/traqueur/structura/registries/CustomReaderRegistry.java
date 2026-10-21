@@ -268,9 +268,10 @@ public class CustomReaderRegistry {
             Object result = reader.read(stringValue);
             return Optional.of(targetClass.cast(result));
         } catch (Exception e) {
-            throw new StructuraException(
+            String reason = e.getMessage() != null ? ": " + e.getMessage() : "";
+            throw new StructuraException(StructuraException.Kind.READER,
                     "Failed to convert value '" + value + "' to type " + genericType +
-                            " using custom reader", e
+                            " using custom reader" + reason, null, e
             );
         }
     }

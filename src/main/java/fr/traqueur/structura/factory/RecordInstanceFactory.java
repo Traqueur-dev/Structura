@@ -8,6 +8,7 @@ import fr.traqueur.structura.exceptions.StructuraException;
 import fr.traqueur.structura.mapping.FieldMapper;
 
 import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Parameter;
 import java.lang.reflect.RecordComponent;
 import java.util.Arrays;
@@ -66,7 +67,7 @@ public class RecordInstanceFactory {
             args = buildNormalArgs(components, data, recordClass, prefix);
         }
 
-        return instantiateRecord(recordClass, args);
+        return instantiateRecord(recordClass, args, prefix);
     }
 
     /**
@@ -91,6 +92,8 @@ public class RecordInstanceFactory {
         Map.Entry<String, Object> entry = data.entrySet().iterator().next();
         String keyValue = entry.getKey();
         Object valueData = entry.getValue();
+        // The entry's key is the key component's value, its value holds the other components
+        String entryPath = fieldMapper.buildPath(prefix, keyValue);
 
         Object[] args = new Object[components.length];
 
@@ -98,17 +101,18 @@ public class RecordInstanceFactory {
             RecordComponent component = components[i];
 
             if (component.getName().equals(keyComponent.getName())) {
-                args[i] = valueConverter.convert(keyValue, component.getType(), prefix);
+                args[i] = valueConverter.convert(keyValue, component.getType(), entryPath);
             } else {
                 Parameter parameter = getConstructorParameter(recordClass, i);
 
                 if (valueData instanceof Map) {
                     @SuppressWarnings("unchecked")
                     Map<String, Object> valueMap = (Map<String, Object>) valueData;
-                    args[i] = resolveComponentValue(component, parameter, valueMap, prefix);
+                    args[i] = resolveComponentValue(component, parameter, valueMap, entryPath);
                 } else {
-                    String path = fieldMapper.buildPath(prefix, component.getName());
-                    args[i] = fieldMapper.getDefaultValue(parameter, path);
+                    String fieldName = fieldMapper.getEffectiveFieldName(parameter, component.getName());
+                    String path = fieldMapper.buildPath(entryPath, fieldName);
+                    args[i] = fieldMapper.getDefaultValue(parameter, path, fieldName);
                 }
             }
         }
@@ -207,10 +211,10 @@ public class RecordInstanceFactory {
         String fieldName = fieldMapper.getEffectiveFieldName(parameter, component.getName());
         String fullPath = fieldMapper.buildPath(prefix, fieldName);
 
-        Object value = fieldMapper.getValueFromPath(data, fullPath);
+        Object value = fieldMapper.getValueFromPath(data, fieldName);
 
         if (value == null) {
-            value = fieldMapper.getDefaultValue(parameter, fullPath);
+            value = fieldMapper.getDefaultValue(parameter, fullPath, fieldName);
         }
 
         // Handle inline polymorphic keys
@@ -224,7 +228,7 @@ public class RecordInstanceFactory {
         }
 
         return value != null
-                ? valueConverter.convert(value, component.getGenericType(), component.getType(), prefix)
+                ? valueConverter.convert(value, component.getGenericType(), component.getType(), fullPath)
                 : null;
     }
 
@@ -391,8 +395,9 @@ public class RecordInstanceFactory {
      */
     private Object enrichWithInlineKey(Object value, Map<String, Object> parentData, Class<?> type, String fullPath) {
         if (!(value instanceof Map)) {
-            throw new StructuraException(
-                    "Inline polymorphic field at " + fullPath + " must have a Map value, but got " + value.getClass().getName()
+            throw new StructuraException(StructuraException.Kind.WRONG_TYPE,
+                    "Inline polymorphic field at " + fullPath + " must have a Map value, but got " + value.getClass().getName(),
+                    fullPath
             );
         }
 
@@ -400,9 +405,10 @@ public class RecordInstanceFactory {
         String discriminatorKey = polymorphic.key();
 
         if (!parentData.containsKey(discriminatorKey)) {
-            throw new StructuraException(
+            throw new StructuraException(StructuraException.Kind.MISSING,
                     "Inline polymorphic field at " + fullPath + " requires discriminator key '" +
-                            discriminatorKey + "' at the same level as the field"
+                            discriminatorKey + "' at the same level as the field",
+                    parentPath(fullPath)
             );
         }
 
@@ -430,9 +436,10 @@ public class RecordInstanceFactory {
         String discriminatorKey = polymorphic.key();
 
         if (!parentData.containsKey(discriminatorKey)) {
-            throw new StructuraException(
+            throw new StructuraException(StructuraException.Kind.MISSING,
                     "Fully inline polymorphic field at " + fullPath + " requires discriminator key '" +
-                            discriminatorKey + "' at the parent level"
+                            discriminatorKey + "' at the parent level",
+                    parentPath(fullPath)
             );
         }
 
@@ -454,13 +461,33 @@ public class RecordInstanceFactory {
     }
 
     /**
-     * Instantiates a record with the given arguments.
+     * The path of the section holding a key: {@code a.b} for {@code a.b.c}, empty at the root.
      */
-    private Object instantiateRecord(Class<?> recordClass, Object[] args) {
+    private static String parentPath(String path) {
+        int dot = path.lastIndexOf('.');
+        return dot < 0 ? "" : path.substring(0, dot);
+    }
+
+    /**
+     * Instantiates a record with the given arguments.
+     *
+     * <p>An exception thrown by the record itself (a check in its compact constructor) means the
+     * values were read but refused: it is reported as {@link StructuraException.Kind#INVALID} at
+     * the path of the record, with the record's own message.</p>
+     */
+    private Object instantiateRecord(Class<?> recordClass, Object[] args, String path) {
         try {
             Constructor<?> constructor = recordClass.getDeclaredConstructors()[0];
             constructor.setAccessible(true);
             return constructor.newInstance(args);
+        } catch (InvocationTargetException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof StructuraException structuraException) {
+                throw structuraException.atPath(path);
+            }
+            String reason = cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName();
+            throw new StructuraException(StructuraException.Kind.INVALID,
+                    recordClass.getSimpleName() + " refused its values: " + reason, path, cause);
         } catch (ReflectiveOperationException e) {
             throw new StructuraException("Failed to create instance of " + recordClass.getName() +
                     ". Arguments: " + Arrays.toString(args), e);
@@ -517,9 +544,10 @@ public class RecordInstanceFactory {
     private Map<String, Object> enrichWithFieldNameAsDiscriminator(Object value, String fieldName,
                                                                     Class<?> type, String fullPath) {
         if (!(value instanceof Map<?, ?>)) {
-            throw new StructuraException(
+            throw new StructuraException(StructuraException.Kind.WRONG_TYPE,
                 "Polymorphic field with useKeyAsDiscriminator at " + fullPath +
-                " must have a Map value, but got " + value.getClass().getName()
+                " must have a Map value, but got " + value.getClass().getName(),
+                fullPath
             );
         }
 
