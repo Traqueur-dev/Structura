@@ -3,6 +3,26 @@
 All notable changes to Structura. Versions follow [semantic versioning](https://semver.org):
 a minor version adds features without breaking existing code.
 
+## 2.5.0 — Keys, schema and registries per processor
+
+### Added
+
+- **`Structura.keyOf(RecordComponent)`** and **`Structura.keyOf(Enum)`** return the exact key the reader
+  uses. The rule is documented: a hyphen goes between a lowercase letter and the uppercase letter that
+  follows it, then the name is lowercased — `httpURL` → `http-url`, `HTTPServer` → `httpserver`,
+  `level2Cap` → `level2cap`.
+- **`Structura.schema(Class)`** / `StructuraProcessor#schema(Class)` describe a record as a `Schema` tree
+  (keys, shapes, required keys, defaults, descriptions, polymorphic sub-types, list elements, map values),
+  and `Schema#toJsonSchema()` renders it for editors.
+- **`@Description("...")`** and **`@Options(description = "...")`** describe a component for the schema.
+- **Registries per processor.** `Structura.builder().readers(CustomReaderRegistry.create())` and
+  `.polymorphics(PolymorphicRegistries.create())`; the global registries stay the default and the fallback.
+
+### Changed
+
+- The global polymorphic registries are now thread-safe.
+- Telling a list of records written as a map from a single record now honours `@Options(name)`.
+
 ## 2.4.0 — Layers and readers that see the value
 
 ### Added
@@ -28,7 +48,7 @@ a minor version adds features without breaking existing code.
 
 | Case | 2.3.0 | 2.4.0 |
 |------|-------|-------|
-| `amount: 100` with a reader registered for `Amount` | `1:9: Unsupported conversion from 100 to Amount (amount)` | *read by the reader* |
+| `amount: 100` with a reader registered for `Amount` | `1:9: Unsupported conversion from 100 to com.example.Amount (amount)` | *read by the reader* |
 | A failing reader | `1:9: Failed to convert value 'lots' to type Amount using custom reader: For input string: "lots" (amount)` | *unchanged*, kind `READER` |
 | Wrong value in the server's file, read over the jar default | *needed a text merge; the line pointed into the rewritten text* | `config.yml:3:12: 'many' is not a number (limits.per-day)` |
 | Wrong value kept from the jar default | *same* | `config.yml (jar):4:13: 'lots' is not a number (limits.per-week)` |
