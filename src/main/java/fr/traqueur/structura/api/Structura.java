@@ -86,10 +86,12 @@ public class Structura {
      * <p>Default settings:</p>
      * <ul>
      *   <li>Validation is enabled during parsing</li>
+     *   <li>A read stops at the first error</li>
      * </ul>
      */
     public static class StructuraBuilder {
         private boolean validateOnParse = true;
+        private boolean collectErrors = false;
 
         /**
          * Sets whether to validate the configuration during parsing.
@@ -103,12 +105,26 @@ public class Structura {
         }
 
         /**
+         * Sets whether a read carries on past an error to report every error of the document at once.
+         *
+         * <p>When enabled, a document with errors throws a {@link fr.traqueur.structura.exceptions.StructuraErrors}
+         * listing them all, each with its path and position, so that a whole file is fixed in one go.</p>
+         *
+         * @param collect true to collect every error, false to stop at the first one (the default)
+         * @return this builder instance for method chaining
+         */
+        public StructuraBuilder collectErrors(boolean collect) {
+            this.collectErrors = collect;
+            return this;
+        }
+
+        /**
          * Builds a new {@link StructuraProcessor} with the specified configurations.
          *
          * @return a new instance of {@link StructuraProcessor}
          */
         public StructuraProcessor build() {
-            return new StructuraProcessor(validateOnParse);
+            return new StructuraProcessor(validateOnParse, collectErrors);
         }
     }
 

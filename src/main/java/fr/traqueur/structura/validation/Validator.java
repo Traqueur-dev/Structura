@@ -4,6 +4,7 @@ import fr.traqueur.structura.annotations.Options;
 import fr.traqueur.structura.annotations.Polymorphic;
 import fr.traqueur.structura.annotations.validation.*;
 import fr.traqueur.structura.api.Loadable;
+import fr.traqueur.structura.conversion.ReadSession;
 import fr.traqueur.structura.exceptions.StructuraException;
 import fr.traqueur.structura.exceptions.ValidationException;
 import fr.traqueur.structura.mapping.FieldMapper;
@@ -93,7 +94,8 @@ public class Validator {
             } catch (ReflectiveOperationException e) {
                 throw new ValidationException("Failed to validate field: " + component.getName(), e);
             } catch (ValidationException e) {
-                throw (ValidationException) e.atPath(fieldDocumentPath);
+                // Collected when the read collects errors, so that the next components are validated too
+                ReadSession.report(e.atPath(fieldDocumentPath));
             }
         }
     }
@@ -139,7 +141,7 @@ public class Validator {
                 if (documentPath != null) {
                     e.atPath(documentPath);
                 }
-                throw e;
+                ReadSession.report(e);
             }
         }
     }
