@@ -95,6 +95,18 @@ public class CustomReaderRegistry {
     }
 
     /**
+     * Creates a registry of its own, to give a processor with
+     * {@code Structura.builder().readers(registry)}: two plugins of the same server, or two tests
+     * running in parallel, then do not share their readers. A processor looks a reader up in its
+     * own registry first, then in the global one.
+     *
+     * @return a new, empty registry
+     */
+    public static CustomReaderRegistry create() {
+        return new CustomReaderRegistry();
+    }
+
+    /**
      * Gets the singleton instance of CustomReaderRegistry.
      *
      * @return the singleton instance

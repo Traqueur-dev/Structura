@@ -4,6 +4,8 @@ import fr.traqueur.structura.StructuraProcessor;
 import fr.traqueur.structura.Updater;
 import fr.traqueur.structura.exceptions.StructuraException;
 import fr.traqueur.structura.mapping.FieldMapper;
+import fr.traqueur.structura.registries.CustomReaderRegistry;
+import fr.traqueur.structura.registries.PolymorphicRegistries;
 
 import java.io.File;
 import java.io.IOException;
@@ -97,6 +99,8 @@ public class Structura {
         private boolean validateOnParse = true;
         private boolean collectErrors = false;
         private boolean strictKeys = false;
+        private CustomReaderRegistry readers;
+        private PolymorphicRegistries polymorphics;
 
         /**
          * Sets whether to validate the configuration during parsing.
@@ -142,12 +146,47 @@ public class Structura {
         }
 
         /**
+         * Gives the processor a reader registry of its own, looked up before the global one, so that two
+         * plugins of the same server, or two tests running in parallel, do not share their readers.
+         *
+         * <pre>
+         * CustomReaderRegistry readers = CustomReaderRegistry.create();
+         * readers.register(Component.class, MiniMessage.miniMessage()::deserialize);
+         * StructuraProcessor processor = Structura.builder().readers(readers).build();
+         * </pre>
+         *
+         * @param registry the registry, from {@link CustomReaderRegistry#create()}
+         * @return this builder instance for method chaining
+         */
+        public StructuraBuilder readers(CustomReaderRegistry registry) {
+            this.readers = registry;
+            return this;
+        }
+
+        /**
+         * Gives the processor polymorphic registries of its own, looked up before the global ones.
+         *
+         * <pre>
+         * PolymorphicRegistries types = PolymorphicRegistries.create();
+         * types.register(Reward.class, registry -&gt; registry.register("money", MoneyReward.class));
+         * StructuraProcessor processor = Structura.builder().polymorphics(types).build();
+         * </pre>
+         *
+         * @param registries the registries, from {@link PolymorphicRegistries#create()}
+         * @return this builder instance for method chaining
+         */
+        public StructuraBuilder polymorphics(PolymorphicRegistries registries) {
+            this.polymorphics = registries;
+            return this;
+        }
+
+        /**
          * Builds a new {@link StructuraProcessor} with the specified configurations.
          *
          * @return a new instance of {@link StructuraProcessor}
          */
         public StructuraProcessor build() {
-            return new StructuraProcessor(validateOnParse, collectErrors, strictKeys);
+            return new StructuraProcessor(validateOnParse, collectErrors, strictKeys, readers, polymorphics);
         }
     }
 

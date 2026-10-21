@@ -741,6 +741,25 @@ registry.registerGeneric(Resolvable.class, ctx ->
 A reader registered for an exact type (`register(new TypeToken<Resolvable<Boolean>>() {}, ...)`) wins over
 the generic one. An exception thrown by a reader becomes a `READER` error with the path and line of the value.
 
+#### Registries per processor
+
+The registries above are global. A processor can be given its own, looked up before the global ones, so
+that two plugins of the same server, or two tests running in parallel, do not share their readers or
+sub-types:
+
+```java
+CustomReaderRegistry readers = CustomReaderRegistry.create();
+readers.register(Component.class, MiniMessage.miniMessage()::deserialize);
+
+PolymorphicRegistries types = PolymorphicRegistries.create();
+types.register(Reward.class, registry -> registry.register("money", MoneyReward.class));
+
+StructuraProcessor processor = Structura.builder()
+        .readers(readers)
+        .polymorphics(types)
+        .build();
+```
+
 ### Reference<T> — External Object References
 
 `Reference<T>` lets you declare a field in a `Loadable` record whose YAML value is a plain string key that maps to a live, externally managed object. Structura resolves it automatically without any `CustomReaderRegistry` setup.

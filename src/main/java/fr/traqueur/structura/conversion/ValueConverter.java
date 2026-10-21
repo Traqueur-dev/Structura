@@ -86,10 +86,13 @@ public class ValueConverter {
 
     private Object convertValue(Object value, Type genericType, Class<?> rawType, String prefix) {
         // Try custom readers first (with generic type information); they see the value as YAML typed it
-        Optional<Object> customResult = CustomReaderRegistry.getInstance().read(value, genericType, rawType, prefix,
-                type -> convert(value, type, rawClassOf(type), prefix));
-        if (customResult.isPresent()) {
-            return customResult.get();
+        // The processor's own registry first, then the global one
+        for (CustomReaderRegistry readers : ReadSession.readerRegistries()) {
+            Optional<Object> customResult = readers.read(value, genericType, rawType, prefix,
+                    type -> convert(value, type, rawClassOf(type), prefix));
+            if (customResult.isPresent()) {
+                return customResult.get();
+            }
         }
 
         if (rawType.isAssignableFrom(value.getClass()) &&
@@ -549,7 +552,7 @@ public class ValueConverter {
 
         Polymorphic polymorphic = loadableClass.getAnnotation(Polymorphic.class);
         String key = polymorphic.key();
-        PolymorphicRegistry<?> registry = PolymorphicRegistry.get(loadableClass);
+        PolymorphicRegistry<?> registry = ReadSession.polymorphicRegistry(loadableClass);
 
         if (!valueMap.containsKey(key)) {
             throw new StructuraException(StructuraException.Kind.MISSING,
