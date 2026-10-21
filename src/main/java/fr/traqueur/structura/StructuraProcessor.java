@@ -1,6 +1,7 @@
 package fr.traqueur.structura;
 
 import fr.traqueur.structura.annotations.Options;
+import fr.traqueur.structura.annotations.Strict;
 import fr.traqueur.structura.api.Loadable;
 import fr.traqueur.structura.api.Source;
 import fr.traqueur.structura.conversion.ReadSession;
@@ -10,6 +11,7 @@ import fr.traqueur.structura.exceptions.StructuraErrors;
 import fr.traqueur.structura.exceptions.StructuraException;
 import fr.traqueur.structura.factory.RecordInstanceFactory;
 import fr.traqueur.structura.mapping.FieldMapper;
+import fr.traqueur.structura.mapping.UnknownKeys;
 import fr.traqueur.structura.registries.CustomReaderRegistry;
 import fr.traqueur.structura.registries.DefaultValueRegistry;
 import fr.traqueur.structura.registries.PolymorphicRegistries;
@@ -25,9 +27,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -381,12 +385,55 @@ public class StructuraProcessor {
                         e -> e
                 ));
 
+        boolean strict = ReadSession.strictKeys() || enumClass.isAnnotationPresent(Strict.class);
+        if (strict) {
+            // A key that is no constant: a typo in a constant's name, or a constant that was removed
+            for (Object key : settings.keySet()) {
+                if (!enumByKebabCase.containsKey(String.valueOf(key))) {
+                    ReadSession.report(UnknownKeys.error(String.valueOf(key), "", enumByKebabCase.keySet()));
+                }
+            }
+        }
+
         for (Map.Entry<String, E> entry : enumByKebabCase.entrySet()) {
             try {
+                if (strict) {
+                    checkEnumConstantKeys(settings.get(entry.getKey()), enumClass, entry.getKey());
+                }
                 processEnumConstant(settings, entry.getKey(), entry.getValue());
             } catch (StructuraException e) {
                 // Collected when the read collects errors, so that the next constants are read too
                 ReadSession.report(e);
+            }
+        }
+    }
+
+    /**
+     * Strict mode: reports every key of a constant's node that none of its fields reads. An inline
+     * record field reads its components' keys at that level; an inline field of any other type
+     * absorbs the rest of the node, so no key is unknown.
+     */
+    private void checkEnumConstantKeys(Object data, Class<?> enumClass, String constantKey) {
+        if (!(data instanceof Map<?, ?> node)) {
+            return;
+        }
+        Set<String> known = new LinkedHashSet<>();
+        for (Field field : enumClass.getDeclaredFields()) {
+            if (isIgnoredEnumField(field)) {
+                continue;
+            }
+            if (isInlineField(field)) {
+                if (!field.getType().isRecord()) {
+                    return;
+                }
+                Arrays.stream(field.getType().getRecordComponents()).map(FieldMapper::keyOf).forEach(known::add);
+                continue;
+            }
+            known.add(fieldMapper.getFieldNameFromField(field));
+        }
+        for (Object key : node.keySet()) {
+            if (!known.contains(String.valueOf(key))) {
+                ReadSession.report(UnknownKeys.error(String.valueOf(key), constantKey, known));
             }
         }
     }
