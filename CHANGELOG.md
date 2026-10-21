@@ -3,6 +3,30 @@
 All notable changes to Structura. Versions follow [semantic versioning](https://semver.org):
 a minor version adds features without breaking existing code.
 
+## 2.9.0 — Writers on par with readers
+
+### Fixed
+
+- **A writer registered for an interface or a superclass is used** for the values whose runtime class is a
+  subtype. Writers were looked up by the exact runtime class, so the documented
+  `register(Component.class, ...)` missed Adventure's components, whose class is an internal implementation.
+  The closest registered type wins.
+- **Multi-word enum values written by Structura are read back**: the writer writes `DARK_RED` as `dark-red`,
+  which the reader now accepts (along with `DARK_RED` and `dark_red`); the JSON Schema offers that form.
+
+### Added (`structura-writer`)
+
+- **`ContextualWriter<T>`** with a `WriteContext`: the declared `target()` type, the `path()` of the value,
+  `write(value)` / `write(value, type)` to serialize inner values with Structura's rules, `typeArgument(i)`.
+  `CustomWriterRegistry#registerContextual(Class, writer)`. Plain `Writer<T>` are unchanged.
+- **Writer registries per instance**: `CustomWriterRegistry.create()` and
+  `YamlStructuraWriter.with(writers, polymorphics)`; the global registries stay the fallback.
+
+### Changed
+
+- The global writer registry is thread-safe.
+- A failing writer names the path of the value: `Writer failed for X at owner: ...`.
+
 ## 2.8.0 — Nested validation by default
 
 ### Changed — behaviour
