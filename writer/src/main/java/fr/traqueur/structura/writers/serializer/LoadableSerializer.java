@@ -17,7 +17,6 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.stream.Collectors;
 
 /**
  * Serializes a {@link Loadable} record to a YAML string.
@@ -71,13 +70,13 @@ public class LoadableSerializer {
      */
     public Map<String, Object> toData(Loadable config) {
         Objects.requireNonNull(config, "config cannot be null");
-        return toMap(config);
+        return toMap(config, "");
     }
 
     /** Serializes {@code config} to a block-style YAML string. */
     public String toYaml(Loadable config) {
         Objects.requireNonNull(config, "config cannot be null");
-        return yaml.dump(toMap(config));
+        return yaml.dump(toMap(config, ""));
     }
 
     // -------------------------------------------------------------------------
@@ -90,7 +89,7 @@ public class LoadableSerializer {
      * <p>When the record has a component marked {@code @Options(isKey = true)}, delegates to
      * {@link #toMapWithKeyComponent} which handles both simple-key and complex-key variants.</p>
      */
-    private Map<String, Object> toMap(Object obj) {
+    private Map<String, Object> toMap(Object obj, String path) {
         Class<?> clazz = obj.getClass();
         if (!clazz.isRecord()) {
             throw new StructuraWriterException("Cannot serialize non-record type: " + clazz.getName());
@@ -102,12 +101,12 @@ public class LoadableSerializer {
 
         RecordComponent keyComponent = fieldMapper.findKeyComponent(components);
         if (keyComponent != null) {
-            return toMapWithKeyComponent(obj, components, parameters, keyComponent);
+            return toMapWithKeyComponent(obj, components, parameters, keyComponent, path);
         }
 
         Map<String, Object> result = new LinkedHashMap<>();
         for (int i = 0; i < components.length; i++) {
-            contributeToMap(result, components[i], parameters[i], readField(components[i], obj));
+            contributeToMap(result, components[i], parameters[i], readField(components[i], obj), path);
         }
         return result;
     }
@@ -123,7 +122,7 @@ public class LoadableSerializer {
      */
     private Map<String, Object> toMapWithKeyComponent(Object obj, RecordComponent[] components,
                                                        Parameter[] parameters,
-                                                       RecordComponent keyComponent) {
+                                                       RecordComponent keyComponent, String path) {
         Class<?> keyType = keyComponent.getType();
 
         if (keyType.isRecord()) {
@@ -133,9 +132,9 @@ public class LoadableSerializer {
                 RecordComponent comp  = components[i];
                 Object          value = readField(comp, obj);
                 if (comp.getName().equals(keyComponent.getName())) {
-                    if (value != null) result.putAll(toMap(value));
+                    if (value != null) result.putAll(toMap(value, path));
                 } else {
-                    contributeToMap(result, comp, parameters[i], value);
+                    contributeToMap(result, comp, parameters[i], value, path);
                 }
             }
             return result;
@@ -145,9 +144,10 @@ public class LoadableSerializer {
         Object              keyValue    = readField(keyComponent, obj);
         Map<String, Object> otherFields = new LinkedHashMap<>();
         int                 keyIdx      = findComponentIndex(components, keyComponent);
+        String              entryPath   = join(path, keyValue != null ? keyValue.toString() : "");
         for (int i = 0; i < components.length; i++) {
             if (i != keyIdx) {
-                contributeToMap(otherFields, components[i], parameters[i], readField(components[i], obj));
+                contributeToMap(otherFields, components[i], parameters[i], readField(components[i], obj), entryPath);
             }
         }
 
@@ -175,11 +175,12 @@ public class LoadableSerializer {
      * </ol>
      */
     private void contributeToMap(Map<String, Object> result, RecordComponent component,
-                                  Parameter parameter, Object value) {
+                                  Parameter parameter, Object value, String path) {
         Options  opts     = parameter.getAnnotation(Options.class);
         boolean  isInline = opts != null && opts.inline();
         Class<?> type     = component.getType();
         String   key      = fieldMapper.getEffectiveFieldName(parameter, component.getName());
+        String   keyPath  = join(path, key);
 
         if (value == null) {
             // Optional null fields are silently omitted; non-optional nulls are written explicitly
@@ -192,11 +193,11 @@ public class LoadableSerializer {
         // ── @Options(inline = true) ──────────────────────────────────────────
         if (isInline) {
             if (type.isRecord() && Loadable.class.isAssignableFrom(type)) {
-                result.putAll(toMap(value));
+                result.putAll(toMap(value, path));
             } else if (Map.class.isAssignableFrom(type)) {
                 // Catch-all map: its entries are poured at the parent level and the field
                 // name is dropped, mirroring how the reader absorbs the unclaimed keys
-                Object entries = serializeValue(value, component.getGenericType());
+                Object entries = serializeValue(value, component.getGenericType(), path);
                 if (entries instanceof Map<?, ?> entryMap) {
                     entryMap.forEach((k, v) -> result.put(k.toString(), v));
                 } else {
@@ -207,12 +208,12 @@ public class LoadableSerializer {
                 if (poly.inline()) {
                     // Fully inline: discriminator + all concrete fields at parent level
                     result.put(poly.key(), lookupRegisteredName(value.getClass(), type));
-                    result.putAll(toMap(value));
+                    result.putAll(toMap(value, path));
                 } else {
-                    result.put(key, serializeValue(value, component.getGenericType()));
+                    result.put(key, serializeValue(value, component.getGenericType(), keyPath));
                 }
             } else {
-                result.put(key, serializeValue(value, component.getGenericType()));
+                result.put(key, serializeValue(value, component.getGenericType(), keyPath));
             }
             return;
         }
@@ -224,45 +225,46 @@ public class LoadableSerializer {
 
             if (poly.useKey()) {
                 // Discriminator value becomes the YAML key; field name is dropped
-                result.put(discValue, toMap(value));
+                result.put(discValue, toMap(value, join(path, discValue)));
             } else if (poly.inline()) {
                 // Discriminator at parent level, concrete fields nested under key
                 result.put(poly.key(), discValue);
-                result.put(key, toMap(value));
+                result.put(key, toMap(value, keyPath));
             } else {
                 // Standard: discriminator first, inside the nested map
                 Map<String, Object> nested = new LinkedHashMap<>();
                 nested.put(poly.key(), discValue);
-                nested.putAll(toMap(value));
+                nested.putAll(toMap(value, keyPath));
                 result.put(key, nested);
             }
             return;
         }
 
-        result.put(key, serializeValue(value, component.getGenericType()));
+        result.put(key, serializeValue(value, component.getGenericType(), keyPath));
     }
 
     // -------------------------------------------------------------------------
     // Value serialization
     // -------------------------------------------------------------------------
 
-    private Object serializeValue(Object value, Type genericType) {
+    private Object serializeValue(Object value, Type genericType, String path) {
         if (value == null) return null;
 
         if (value instanceof Reference<?> ref) return ref.key();
 
-        Optional<Object> custom = CustomWriterRegistry.getInstance().write(value, value.getClass());
+        Optional<Object> custom = CustomWriterRegistry.getInstance().write(value, genericType, path,
+                (inner, innerType) -> serializeValue(inner, innerType, path));
         if (custom.isPresent()) return custom.get();
 
         if (genericType instanceof ParameterizedType paramType) {
             Type[] typeArgs = paramType.getActualTypeArguments();
             Type   elemType = typeArgs.length > 0 ? typeArgs[0] : Object.class;
-            if (value instanceof List<?> list) return serializeCollection(list, elemType);
-            if (value instanceof Set<?> set)  return serializeCollection(new ArrayList<>(set), elemType);
-            if (value instanceof Map<?, ?> map) return serializeMap(map, typeArgs);
+            if (value instanceof List<?> list) return serializeCollection(list, elemType, path);
+            if (value instanceof Set<?> set)  return serializeCollection(new ArrayList<>(set), elemType, path);
+            if (value instanceof Map<?, ?> map) return serializeMap(map, typeArgs, path);
         }
 
-        if (value.getClass().isRecord())       return toMap(value);
+        if (value.getClass().isRecord())       return toMap(value, path);
         if (value instanceof Enum<?> e)        return fieldMapper.convertSnakeCaseToKebabCase(e.name());
         if (value instanceof LocalDate d)      return d.format(DATE_FORMATTER);
         if (value instanceof LocalDateTime dt) return dt.format(DATE_TIME_FORMATTER);
@@ -281,7 +283,7 @@ public class LoadableSerializer {
      *   <li>Otherwise → plain list</li>
      * </ul>
      */
-    private Object serializeCollection(List<?> elements, Type elementGenericType) {
+    private Object serializeCollection(List<?> elements, Type elementGenericType, String path) {
         if (elements.isEmpty()) return new ArrayList<>();
 
         Class<?> elementRawType = getRawClass(elementGenericType);
@@ -290,7 +292,8 @@ public class LoadableSerializer {
         if (isPolymorphicWithUseKey(elementRawType)) {
             Map<String, Object> resultMap = new LinkedHashMap<>();
             for (Object elem : elements) {
-                resultMap.put(lookupRegisteredName(elem.getClass(), elementRawType), toMap(elem));
+                String name = lookupRegisteredName(elem.getClass(), elementRawType);
+                resultMap.put(name, toMap(elem, join(path, name)));
             }
             return resultMap;
         }
@@ -301,14 +304,16 @@ public class LoadableSerializer {
             if (keyComp != null) {
                 if (keyComp.getType().isRecord()) {
                     // Complex key: toMap() flattens the key sub-record; serialize as a YAML list
-                    return elements.stream()
-                            .map(e -> toMap(e))
-                            .collect(Collectors.toList());
+                    List<Object> resultList = new ArrayList<>();
+                    for (int i = 0; i < elements.size(); i++) {
+                        resultList.add(toMap(elements.get(i), path + "[" + i + "]"));
+                    }
+                    return resultList;
                 }
                 // Simple key: toMap() returns { keyValue: { otherFields } }; merge into one map
                 Map<String, Object> resultMap = new LinkedHashMap<>();
                 for (Object elem : elements) {
-                    resultMap.putAll(toMap(elem));
+                    resultMap.putAll(toMap(elem, path));
                 }
                 return resultMap;
             }
@@ -318,18 +323,21 @@ public class LoadableSerializer {
         if (isPolymorphicInterface(elementRawType)) {
             Polymorphic  poly       = elementRawType.getAnnotation(Polymorphic.class);
             List<Object> resultList = new ArrayList<>();
-            for (Object elem : elements) {
+            for (int i = 0; i < elements.size(); i++) {
+                Object elem = elements.get(i);
                 Map<String, Object> entry = new LinkedHashMap<>();
                 entry.put(poly.key(), lookupRegisteredName(elem.getClass(), elementRawType));
-                entry.putAll(toMap(elem));
+                entry.putAll(toMap(elem, path + "[" + i + "]"));
                 resultList.add(entry);
             }
             return resultList;
         }
 
-        return elements.stream()
-                .map(e -> serializeValue(e, elementGenericType))
-                .collect(Collectors.toList());
+        List<Object> resultList = new ArrayList<>();
+        for (int i = 0; i < elements.size(); i++) {
+            resultList.add(serializeValue(elements.get(i), elementGenericType, path + "[" + i + "]"));
+        }
+        return resultList;
     }
 
     /**
@@ -344,7 +352,7 @@ public class LoadableSerializer {
      *   <li>Otherwise → normal map</li>
      * </ul>
      */
-    private Object serializeMap(Map<?, ?> map, Type[] typeArgs) {
+    private Object serializeMap(Map<?, ?> map, Type[] typeArgs, String path) {
         Type     valueGenericType = typeArgs.length > 1 ? typeArgs[1] : Object.class;
         Class<?> valueRawType     = getRawClass(valueGenericType);
 
@@ -353,7 +361,8 @@ public class LoadableSerializer {
         // useKey map: outer key IS the discriminator — write concrete fields only
         if (isPolymorphicWithUseKey(valueRawType)) {
             for (Map.Entry<?, ?> e : map.entrySet()) {
-                result.put(e.getKey().toString(), e.getValue() != null ? toMap(e.getValue()) : null);
+                result.put(e.getKey().toString(),
+                        e.getValue() != null ? toMap(e.getValue(), join(path, e.getKey().toString())) : null);
             }
             return result;
         }
@@ -364,7 +373,7 @@ public class LoadableSerializer {
                 && fieldMapper.findKeyComponent(valueRawType.getRecordComponents()) != null) {
             for (Map.Entry<?, ?> e : map.entrySet()) {
                 if (e.getValue() == null) { result.put(e.getKey().toString(), null); continue; }
-                Map<String, Object> wrapped = toMap(e.getValue());
+                Map<String, Object> wrapped = toMap(e.getValue(), path);
                 result.put(e.getKey().toString(), wrapped.values().iterator().next());
             }
             return result;
@@ -377,14 +386,15 @@ public class LoadableSerializer {
                 if (e.getValue() == null) { result.put(e.getKey().toString(), null); continue; }
                 Map<String, Object> valueMap = new LinkedHashMap<>();
                 valueMap.put(poly.key(), lookupRegisteredName(e.getValue().getClass(), valueRawType));
-                valueMap.putAll(toMap(e.getValue()));
+                valueMap.putAll(toMap(e.getValue(), join(path, e.getKey().toString())));
                 result.put(e.getKey().toString(), valueMap);
             }
             return result;
         }
 
         for (Map.Entry<?, ?> e : map.entrySet()) {
-            result.put(e.getKey().toString(), serializeValue(e.getValue(), valueGenericType));
+            result.put(e.getKey().toString(),
+                    serializeValue(e.getValue(), valueGenericType, join(path, e.getKey().toString())));
         }
         return result;
     }
@@ -415,6 +425,10 @@ public class LoadableSerializer {
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
+
+    private static String join(String path, String key) {
+        return path.isEmpty() ? key : path + "." + key;
+    }
 
     private boolean isPolymorphicInterface(Class<?> type) {
         return type.isInterface()
@@ -495,7 +509,9 @@ public class LoadableSerializer {
                 if (value == null && options != null && options.optional()) {
                     continue;
                 }
-                result.put(fieldMapper.getFieldNameFromField(field), serializeValue(value, field.getGenericType()));
+                String key = fieldMapper.getFieldNameFromField(field);
+                result.put(key, serializeValue(value, field.getGenericType(),
+                        join(fieldMapper.convertSnakeCaseToKebabCase(constant.name()), key)));
             } catch (IllegalAccessException e) {
                 throw new StructuraWriterException(
                         "Cannot read enum field: " + field.getName() + " of constant: " + constant.name(), e);
