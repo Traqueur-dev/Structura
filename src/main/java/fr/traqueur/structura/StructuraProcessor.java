@@ -42,6 +42,7 @@ public class StructuraProcessor {
     private final boolean strictKeys;
     private final CustomReaderRegistry readers;
     private final PolymorphicRegistries polymorphics;
+    private final boolean validateNested;
 
     private final RecordInstanceFactory recordFactory;
     private final FieldMapper fieldMapper;
@@ -93,6 +94,26 @@ public class StructuraProcessor {
      */
     public StructuraProcessor(boolean validateOnParse, boolean collectErrors, boolean strictKeys,
                               CustomReaderRegistry readers, PolymorphicRegistries polymorphics) {
+        this(validateOnParse, collectErrors, strictKeys, readers, polymorphics, false);
+    }
+
+    /**
+     * Constructs a StructuraProcessor.
+     *
+     * @param validateOnParse if true, validates instances after parsing
+     * @param collectErrors if true, a read carries on past an error and reports every error of the
+     *                      document together in a {@link StructuraErrors}
+     * @param strictKeys if true, a key that no component reads is an error
+     *                   ({@link StructuraException.Kind#UNKNOWN_KEY}) instead of being ignored
+     * @param readers this processor's own reader registry, looked up before the global one, or null
+     * @param polymorphics this processor's own polymorphic registries, looked up before the global ones, or null
+     * @param validateNested if true, validation also checks the records held by lists, maps and
+     *                       polymorphic components
+     */
+    public StructuraProcessor(boolean validateOnParse, boolean collectErrors, boolean strictKeys,
+                              CustomReaderRegistry readers, PolymorphicRegistries polymorphics,
+                              boolean validateNested) {
+        this.validateNested = validateNested;
         this.validateOnParse = validateOnParse;
         this.collectErrors = collectErrors;
         this.strictKeys = strictKeys;
@@ -189,7 +210,7 @@ public class StructuraProcessor {
             T instance = settingsClass.cast(recordFactory.createInstance(settings, settingsClass, ""));
 
             if (validateOnParse) {
-                Validator.INSTANCE.validate(instance, "", "");
+                Validator.INSTANCE.validate(instance, "", "", validateNested);
             }
 
             return instance;
@@ -389,7 +410,7 @@ public class StructuraProcessor {
         injectDataIntoEnum(enumConstant, data, kebabCaseName);
 
         if (validateOnParse) {
-            Validator.INSTANCE.validate(enumConstant, kebabCaseName, kebabCaseName);
+            Validator.INSTANCE.validate(enumConstant, kebabCaseName, kebabCaseName, validateNested);
         }
     }
 
@@ -523,7 +544,9 @@ public class StructuraProcessor {
             Object value = dataMap.get(fieldName);
 
             if (value != null) {
-                return valueConverter.convert(value, field.getType(), fieldMapper.buildPath(path, fieldName));
+                // The generic type matters: a List<Offer> field holds Offer records, not raw maps
+                return valueConverter.convert(value, field.getGenericType(), field.getType(),
+                        fieldMapper.buildPath(path, fieldName));
             }
         } else {
             if (field.getType().isAssignableFrom(data.getClass())) {
