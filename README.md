@@ -1036,6 +1036,37 @@ String mysqlDriver = DatabaseType.MYSQL.driver;
 int postgresPort = DatabaseType.POSTGRESQL.defaultPort;
 ```
 
+### Schema (editor autocompletion & documentation) 🗺️
+
+`Structura.schema(Class)` describes what a record reads with Structura's own rules — keys as written in the
+document, types, required keys, defaults, descriptions, polymorphic sub-types, list elements and map
+values — so a documentation or an editor schema never reimplements the walk:
+
+```java
+public record ShopSettings(
+        @Description("Items shown on one page") @DefaultInt(27) int maxItems,
+        @Options(optional = true, description = "Message of the day") String motd,
+        Reward reward
+) implements Loadable {}
+
+Schema schema = Structura.schema(ShopSettings.class);
+for (Schema property : schema.properties()) {
+    property.key();           // "max-items"
+    property.shape();         // INTEGER, SECTION, LIST, MAP, POLYMORPHIC, ENUM, ...
+    property.required();      // false: it has a default
+    property.defaultValue();  // Optional[27]
+    property.description();   // Optional[Items shown on one page]
+    property.subtypes();      // for a polymorphic value: {"item": ..., "money": ...}
+}
+
+// JSON Schema for the YAML extension of your configurators' editor
+Files.writeString(Path.of("shop.schema.json"), schema.toJsonSchema());
+```
+
+The JSON Schema flags keys that no component reads, lists one branch per registered polymorphic sub-type,
+and offers enum values in both cases. Polymorphic sub-types are taken from the registries, so register them
+before asking for the schema (`processor.schema(Class)` uses the processor's own registries).
+
 ## 🎯 Field Name Mapping
 
 Structura automatically converts between Java camelCase and YAML kebab-case:

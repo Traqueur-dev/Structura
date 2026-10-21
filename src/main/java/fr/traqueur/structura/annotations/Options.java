@@ -80,4 +80,12 @@ public @interface Options {
      * @return true if the fields should be inlined, false otherwise
      */
     boolean inline() default false;
+
+    /**
+     * Describes the field for the schema of the configuration (see {@code Structura.schema}).
+     * {@link Description @Description} says the same and wins when both are given.
+     *
+     * @return the description, or an empty string for none
+     */
+    String description() default "";
 }
