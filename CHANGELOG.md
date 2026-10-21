@@ -3,6 +3,36 @@
 All notable changes to Structura. Versions follow [semantic versioning](https://semver.org):
 a minor version adds features without breaking existing code.
 
+## 2.4.0 — Layers and readers that see the value
+
+### Added
+
+- **Layered sources.** `StructuraProcessor#parse(List<Source>, Class)` (and `Structura.parse(List<Source>, Class)`,
+  `parseEnum(List<Source>, Class)`) reads a default and its overrides in one call, without rewriting any
+  text. Sections merge key by key at every depth; a list or a value of an upper layer replaces the one below.
+  Each error names the layer and the line in that layer; strict mode checks every layer.
+  `Source.of(name, text)`, `Source.of(Path)`, `Source.ofResource(path)`.
+- **Contextual readers.** `ContextualReader<T>` receives a `ReadContext`: `raw()` as YAML typed it, `text()`,
+  the full `target()` type, `path()`, `convert(Type)` and `typeArgument(int)`.
+  `CustomReaderRegistry#registerContextual(Class | TypeToken, reader)`.
+- **Generic readers.** `CustomReaderRegistry#registerGeneric(Resolvable.class, reader)` serves every
+  parameterization of a type; a reader for an exact type wins over it.
+
+### Changed
+
+- During a read, a plain `Reader<T>` also receives the text of a number or a boolean when the value does
+  not already have the requested type, so `amount: 100` and `amount: "100"` reach the same reader.
+  The registry's own `convert(...)` methods keep handing only strings to a reader.
+
+### Messages, before and after
+
+| Case | 2.3.0 | 2.4.0 |
+|------|-------|-------|
+| `amount: 100` with a reader registered for `Amount` | `1:9: Unsupported conversion from 100 to Amount (amount)` | *read by the reader* |
+| A failing reader | `1:9: Failed to convert value 'lots' to type Amount using custom reader: For input string: "lots" (amount)` | *unchanged*, kind `READER` |
+| Wrong value in the server's file, read over the jar default | *needed a text merge; the line pointed into the rewritten text* | `config.yml:3:12: 'many' is not a number (limits.per-day)` |
+| Wrong value kept from the jar default | *same* | `config.yml (jar):4:13: 'lots' is not a number (limits.per-week)` |
+
 ## 2.3.0 — Errors that say where
 
 ### Added

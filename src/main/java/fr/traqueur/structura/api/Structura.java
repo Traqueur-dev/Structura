@@ -8,6 +8,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.ServiceLoader;
 
 /**
@@ -310,6 +311,29 @@ public class Structura {
      */
     public static <T extends Loadable> T parse(String yamlContent, Class<T> configClass) {
         return PROCESSOR.parse(yamlContent, configClass);
+    }
+
+    /**
+     * Parses a document read in layers, the last one on top — a default shipped in a jar, then the
+     * server's file — without rewriting any text. Sections are merged key by key at every depth;
+     * a list or a single value of an upper layer replaces the one below. Each error names the layer,
+     * and the line in that layer, of the faulty value.
+     *
+     * <pre>
+     * ShopSettings settings = Structura.parse(List.of(
+     *         Source.ofResource("/config.yml"),
+     *         Source.of(dataFolder.resolve("config.yml"))
+     * ), ShopSettings.class);
+     * </pre>
+     *
+     * @param sources     the layers, from the bottom (defaults) to the top (overrides)
+     * @param configClass the class of the configuration to parse
+     * @param <T>         the type of the configuration, which must implement {@link Loadable}
+     * @return an instance of T populated with the merged data
+     * @throws StructuraException if there is an error during parsing or validation
+     */
+    public static <T extends Loadable> T parse(List<Source> sources, Class<T> configClass) {
+        return PROCESSOR.parse(sources, configClass);
     }
 
     /**

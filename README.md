@@ -709,6 +709,38 @@ registry.register(new TypeToken<Box<String>>() {}, str -> new Box<>("SPECIFIC:" 
    new TypeToken<List<?>>() {}
    ```
 
+#### Contextual and generic readers
+
+A plain `Reader<T>` receives text. During a read it now also receives the text of a number or a boolean,
+so `amount: 100` and `amount: "100"` reach the same reader. A `ContextualReader<T>` sees more: the value
+as YAML typed it, the full type requested and the path of the value.
+
+```java
+CustomReaderRegistry registry = CustomReaderRegistry.getInstance();
+
+registry.registerContextual(Amount.class, ctx -> {
+    ctx.raw();     // 100 (Integer) or "100" (String), as YAML typed it
+    ctx.text();    // "100"
+    ctx.target();  // TypeToken{Amount}
+    ctx.path();    // "shop.offers[2].amount"
+    return new Amount(Long.parseLong(ctx.text()));
+});
+```
+
+A **generic reader** serves every parameterization of a type, instead of one reader per
+`Resolvable<Integer>`, `Resolvable<Team>`… It reads the type argument with Structura's own rules
+through `ctx.convert(...)`:
+
+```java
+registry.registerGeneric(Resolvable.class, ctx ->
+        ctx.raw() instanceof String text && text.startsWith("%")
+                ? Resolvable.placeholder(text)                       // "%server_pvp%"
+                : Resolvable.of(ctx.convert(ctx.typeArgument(0))));  // 20, true, Team...
+```
+
+A reader registered for an exact type (`register(new TypeToken<Resolvable<Boolean>>() {}, ...)`) wins over
+the generic one. An exception thrown by a reader becomes a `READER` error with the path and line of the value.
+
 ### Reference<T> — External Object References
 
 `Reference<T>` lets you declare a field in a `Loadable` record whose YAML value is a plain string key that maps to a live, externally managed object. Structura resolves it automatically without any `CustomReaderRegistry` setup.
@@ -881,6 +913,27 @@ CustomWriterRegistry.getInstance().register(
 ```
 
 A `Writer<T>` converts a Java value to its YAML-serializable form (a String, Number, Map, List, etc.). Pair it with a matching `CustomReaderRegistry` entry to keep your custom type fully round-trippable.
+
+### Layered Sources (defaults + overrides)
+
+Read a default shipped in the jar and the server's file on top of it, in one call and without rewriting
+any text:
+
+```java
+ShopSettings settings = Structura.parse(List.of(
+        Source.ofResource("/config.yml"),             // shown as "config.yml (jar)"
+        Source.of(dataFolder.resolve("config.yml"))   // the server's file
+), ShopSettings.class);
+
+// or with explicit names
+processor.parse(List.of(Source.of("config.yml (jar)", defaults), Source.of("config.yml", server)), ShopSettings.class);
+```
+
+- sections are merged key by key, at every depth;
+- a list or a single value of an upper layer replaces the one below;
+- each error names the layer, and the line in that layer, of the faulty value:
+  `config.yml (jar):4:13: 'lots' is not a number (limits.per-week)`;
+- strict mode checks the keys of every layer.
 
 ### Optional Fields
 

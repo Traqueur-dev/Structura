@@ -84,8 +84,9 @@ public class ValueConverter {
     }
 
     private Object convertValue(Object value, Type genericType, Class<?> rawType, String prefix) {
-        // Try custom reader first (with generic type information)
-        Optional<?> customResult = CustomReaderRegistry.getInstance().convert(value, genericType, rawType);
+        // Try custom readers first (with generic type information); they see the value as YAML typed it
+        Optional<Object> customResult = CustomReaderRegistry.getInstance().read(value, genericType, rawType, prefix,
+                type -> convert(value, type, rawClassOf(type), prefix));
         if (customResult.isPresent()) {
             return customResult.get();
         }
@@ -499,6 +500,14 @@ public class ValueConverter {
             case Class<?> clazz -> clazz;
             case ParameterizedType paramType -> (Class<?>) paramType.getRawType();
             default -> throw new StructuraException("Unsupported type: " + type);
+        };
+    }
+
+    private static Class<?> rawClassOf(Type type) {
+        return switch (type) {
+            case Class<?> clazz -> clazz;
+            case ParameterizedType paramType -> (Class<?>) paramType.getRawType();
+            default -> Object.class;
         };
     }
 
