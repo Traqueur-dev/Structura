@@ -3,6 +3,21 @@
 All notable changes to Structura. Versions follow [semantic versioning](https://semver.org):
 a minor version adds features without breaking existing code.
 
+## 2.8.0 — Nested validation by default
+
+### Changed — behaviour
+
+- **Validation descends into nested records by default**: every record held by a list or a set, a map value
+  or a polymorphic component is validated, at any depth, by the processor and by
+  `Validator#validate(instance, path)`. A configuration with, say, `price: 0` on an offer of a
+  `List<Offer>` whose `price` is `@Min(1)` was accepted until 2.7.0 and is now refused:
+
+  ```
+  5:12: Value must be at least 1 (offers[1].price)
+  ```
+
+  `Structura.builder().validateNested(false)` restores the previous behaviour.
+
 ## 2.7.0 — Nested validation and strict enums
 
 ### Added
