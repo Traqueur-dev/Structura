@@ -9,12 +9,12 @@ import fr.traqueur.structura.writers.writer.Writer;
 import java.lang.reflect.Type;
 import java.util.ArrayDeque;
 import java.util.Deque;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiFunction;
 
 /**
@@ -33,9 +33,21 @@ public class CustomWriterRegistry {
 
     private static final CustomWriterRegistry INSTANCE = new CustomWriterRegistry();
 
-    private final Map<Class<?>, ContextualWriter<?>> writers = new HashMap<>();
+    private final Map<Class<?>, ContextualWriter<?>> writers = new ConcurrentHashMap<>();
 
     private CustomWriterRegistry() {}
+
+    /**
+     * Creates a registry of its own, to give a writer with
+     * {@code YamlStructuraWriter.with(registry, ...)}: two plugins of the same server, or two tests
+     * running in parallel, then do not share their writers. Such a writer looks a writer up in its own
+     * registry first, then in the global one.
+     *
+     * @return a new, empty registry
+     */
+    public static CustomWriterRegistry create() {
+        return new CustomWriterRegistry();
+    }
 
     public static CustomWriterRegistry getInstance() {
         return INSTANCE;

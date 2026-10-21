@@ -6,6 +6,7 @@ import fr.traqueur.structura.api.Loadable;
 import fr.traqueur.structura.mapping.FieldMapper;
 import fr.traqueur.structura.references.Reference;
 import fr.traqueur.structura.registries.DefaultValueRegistry;
+import fr.traqueur.structura.registries.PolymorphicRegistries;
 import fr.traqueur.structura.registries.PolymorphicRegistry;
 import fr.traqueur.structura.writers.exceptions.StructuraWriterException;
 import fr.traqueur.structura.writers.registries.CustomWriterRegistry;
@@ -50,9 +51,21 @@ public class LoadableSerializer {
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
 
     private final FieldMapper fieldMapper;
+    private final CustomWriterRegistry writers;
+    private final PolymorphicRegistries polymorphics;
     private final Yaml        yaml;
 
     public LoadableSerializer() {
+        this(null, null);
+    }
+
+    /**
+     * @param writers this serializer's own writer registry, looked up before the global one, or null
+     * @param polymorphics this serializer's own polymorphic registries, looked up before the global ones, or null
+     */
+    public LoadableSerializer(CustomWriterRegistry writers, PolymorphicRegistries polymorphics) {
+        this.writers = writers;
+        this.polymorphics = polymorphics;
         this.fieldMapper = new FieldMapper();
         DumperOptions opts = new DumperOptions();
         opts.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
@@ -252,9 +265,12 @@ public class LoadableSerializer {
 
         if (value instanceof Reference<?> ref) return ref.key();
 
-        Optional<Object> custom = CustomWriterRegistry.getInstance().write(value, genericType, path,
-                (inner, innerType) -> serializeValue(inner, innerType, path));
-        if (custom.isPresent()) return custom.get();
+        // This serializer's own writers first, then the global ones
+        for (CustomWriterRegistry registry : writerRegistries()) {
+            Optional<Object> custom = registry.write(value, genericType, path,
+                    (inner, innerType) -> serializeValue(inner, innerType, path));
+            if (custom.isPresent()) return custom.get();
+        }
 
         if (genericType instanceof ParameterizedType paramType) {
             Type[] typeArgs = paramType.getActualTypeArguments();
@@ -405,9 +421,10 @@ public class LoadableSerializer {
 
     @SuppressWarnings("unchecked")
     private String lookupRegisteredName(Class<?> concreteClass, Class<?> polymorphicInterface) {
-        PolymorphicRegistry<Loadable> registry =
-                (PolymorphicRegistry<Loadable>) PolymorphicRegistry.get(
-                        (Class<? extends Loadable>) polymorphicInterface);
+        Class<Loadable> type = (Class<Loadable>) polymorphicInterface;
+        PolymorphicRegistry<Loadable> registry = polymorphics != null
+                ? polymorphics.find(type).orElseGet(() -> PolymorphicRegistries.global().get(type))
+                : PolymorphicRegistries.global().get(type);
 
         for (String name : registry.availableNames()) {
             if (registry.get(name).filter(c -> c == concreteClass).isPresent()) {
@@ -425,6 +442,11 @@ public class LoadableSerializer {
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
+
+    private List<CustomWriterRegistry> writerRegistries() {
+        CustomWriterRegistry global = CustomWriterRegistry.getInstance();
+        return writers == null || writers == global ? List.of(global) : List.of(writers, global);
+    }
 
     private static String join(String path, String key) {
         return path.isEmpty() ? key : path + "." + key;
