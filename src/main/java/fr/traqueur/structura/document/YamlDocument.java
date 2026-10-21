@@ -13,7 +13,13 @@ import org.yaml.snakeyaml.nodes.NodeTuple;
 import org.yaml.snakeyaml.nodes.ScalarNode;
 import org.yaml.snakeyaml.nodes.SequenceNode;
 
+
 import java.io.StringReader;
+import java.util.ArrayList;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * A YAML document read once, keeping both its plain Java form (the {@code Map}s, {@code List}s and
@@ -25,17 +31,24 @@ import java.io.StringReader;
  * keeps positions out of every conversion signature, and works the same for a value the conversion
  * copied or enriched (a polymorphic discriminator added to a map, an inline record reading its
  * parent's node), since only the path matters.</p>
+ *
+ * <p>Several documents can be {@link #merge merged} into layers (a default shipped in a jar, then the
+ * server's file on top): each node remembers the layer it comes from, so an error names the file and
+ * the line of the layer that holds the faulty value.</p>
  */
 public final class YamlDocument {
 
     private final String source;
     private final Node root;
     private final Object data;
+    /** The layer each node comes from, when the document merges several; empty for a single one. */
+    private final Map<Node, String> sources;
 
-    private YamlDocument(String source, Node root, Object data) {
+    private YamlDocument(String source, Node root, Object data, Map<Node, String> sources) {
         this.source = source;
         this.root = root;
         this.data = data;
+        this.sources = sources;
     }
 
     /**
@@ -50,7 +63,7 @@ public final class YamlDocument {
         try {
             Node root = new Yaml().compose(new StringReader(text));
             Object data = root == null ? null : new NodeConstructor().construct(root);
-            return new YamlDocument(source, root, data);
+            return new YamlDocument(source, root, data, Map.of());
         } catch (MarkedYAMLException e) {
             Mark mark = e.getProblemMark() != null ? e.getProblemMark() : e.getContextMark();
             String problem = e.getProblem() != null ? e.getProblem() : e.getMessage();
@@ -62,6 +75,88 @@ public final class YamlDocument {
             throw error;
         } catch (YAMLException e) {
             throw new StructuraException(StructuraException.Kind.SYNTAX, "invalid YAML: " + e.getMessage(), null, e);
+        }
+    }
+
+    /**
+     * Merges documents read as layers, the last one on top: sections are merged key by key, at every
+     * depth; a list or a single value of an upper layer replaces the one below. Every node keeps the
+     * layer it was read from, for error positions.
+     *
+     * @param layers the documents, from the bottom (defaults) to the top (overrides)
+     * @return the merged document
+     */
+    public static YamlDocument merge(List<YamlDocument> layers) {
+        if (layers.size() == 1) {
+            return layers.getFirst();
+        }
+        Map<Node, String> sources = new IdentityHashMap<>();
+        Node merged = null;
+        String topSource = null;
+        for (YamlDocument layer : layers) {
+            if (layer.root == null) {
+                continue;
+            }
+            claim(layer.root, layer.source, sources);
+            merged = merged == null ? layer.root : mergeNodes(merged, layer.root, sources);
+            topSource = layer.source;
+        }
+        Object data = merged == null ? null : new NodeConstructor().construct(merged);
+        return new YamlDocument(topSource, merged, data, sources);
+    }
+
+    /**
+     * Records the layer of every node of a tree.
+     */
+    private static void claim(Node node, String source, Map<Node, String> sources) {
+        if (sources.putIfAbsent(node, source) != null) {
+            return; // an alias already visited
+        }
+        if (node instanceof MappingNode mapping) {
+            for (NodeTuple tuple : mapping.getValue()) {
+                claim(tuple.getKeyNode(), source, sources);
+                claim(tuple.getValueNode(), source, sources);
+            }
+        } else if (node instanceof SequenceNode sequence) {
+            sequence.getValue().forEach(item -> claim(item, source, sources));
+        }
+    }
+
+    /**
+     * Merges an upper node over a lower one: two sections are merged key by key, anything else is
+     * replaced by the upper node. A merged section is a new node standing where the upper one stands.
+     */
+    private static Node mergeNodes(Node lower, Node upper, Map<Node, String> sources) {
+        if (!(lower instanceof MappingNode lowerMapping) || !(upper instanceof MappingNode upperMapping)) {
+            return upper;
+        }
+        Map<String, NodeTuple> tuples = new LinkedHashMap<>();
+        List<NodeTuple> others = new ArrayList<>();
+        for (NodeTuple tuple : lowerMapping.getValue()) {
+            put(tuples, others, tuple);
+        }
+        for (NodeTuple tuple : upperMapping.getValue()) {
+            if (tuple.getKeyNode() instanceof ScalarNode key && tuples.containsKey(key.getValue())) {
+                NodeTuple below = tuples.get(key.getValue());
+                tuples.put(key.getValue(), new NodeTuple(tuple.getKeyNode(),
+                        mergeNodes(below.getValueNode(), tuple.getValueNode(), sources)));
+            } else {
+                put(tuples, others, tuple);
+            }
+        }
+        List<NodeTuple> value = new ArrayList<>(tuples.values());
+        value.addAll(others);
+        MappingNode merged = new MappingNode(upperMapping.getTag(), true, value,
+                upperMapping.getStartMark(), upperMapping.getEndMark(), upperMapping.getFlowStyle());
+        sources.put(merged, sources.get(upperMapping));
+        return merged;
+    }
+
+    private static void put(Map<String, NodeTuple> tuples, List<NodeTuple> others, NodeTuple tuple) {
+        if (tuple.getKeyNode() instanceof ScalarNode key) {
+            tuples.put(key.getValue(), tuple);
+        } else {
+            others.add(tuple);
         }
     }
 
@@ -95,7 +190,7 @@ public final class YamlDocument {
         }
         Node node = find(error.path().orElse(""), error.kind() == StructuraException.Kind.UNKNOWN_KEY);
         Mark mark = node.getStartMark();
-        return error.locate(source, mark.getLine() + 1, mark.getColumn() + 1);
+        return error.locate(sources.getOrDefault(node, source), mark.getLine() + 1, mark.getColumn() + 1);
     }
 
     /**
