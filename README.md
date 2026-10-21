@@ -918,6 +918,41 @@ The writer is symmetric with the reader — it understands the same feature set:
 - `Reference<T>` — serialized back to its key string
 - Lists, Sets, and Maps of any of the above
 
+#### Rewriting a file a person wrote
+
+`Structura.write` produces a fresh file. To change a file a person edits — from an in-game editor, for
+instance — use `update`, which keeps their comments, the order of their keys and the quoting of the values
+that did not change:
+
+```java
+Structura.update(file, edited);
+```
+
+```yaml
+# Limits per player
+limits:
+  per-day: 8 # resets at midnight      <- only the value changed
+  # weekly cap
+  per-week: 20
+```
+
+A key the configuration no longer has is removed (with its comments), a new key goes after the existing
+ones. SnakeYAML reduces the spaces before an end-of-line comment to one.
+
+#### Writing only what differs from the default
+
+A server file read over a default shipped in the jar ([Layered Sources](#layered-sources-defaults--overrides))
+only needs what the server changed. `writeOverrides` writes exactly that, keeping the comments already in the
+file — reading the file over the default gives the configuration back:
+
+```java
+ShopSettings defaults = Structura.parse(List.of(Source.ofResource("/config.yml")), ShopSettings.class);
+Structura.writeOverrides(dataFolder.resolve("config.yml"), edited, defaults);
+```
+
+Sections are compared key by key, lists and values as a whole — the same rules as layered reading. Keys are
+written with the same names the reader reads (`Structura.keyOf`).
+
 #### Custom Writers
 
 For types the serializer doesn't know natively (e.g. Adventure's `Component`), register a `Writer<T>` — the symmetric counterpart to a custom reader:
