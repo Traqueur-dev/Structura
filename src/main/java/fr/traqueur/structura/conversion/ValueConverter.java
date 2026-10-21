@@ -471,7 +471,12 @@ public class ValueConverter {
                 try {
                     return Enum.valueOf(enumClass, strValue);
                 } catch (IllegalArgumentException e) {
-                    return Enum.valueOf(enumClass, strValue.toUpperCase());
+                    try {
+                        return Enum.valueOf(enumClass, strValue.toUpperCase());
+                    } catch (IllegalArgumentException kebab) {
+                        // dark-red: the kebab-case form the writer produces for DARK_RED
+                        return Enum.valueOf(enumClass, strValue.toUpperCase().replace('-', '_'));
+                    }
                 }
             } catch (IllegalArgumentException e) {
                 throw new StructuraException(StructuraException.Kind.WRONG_TYPE,
