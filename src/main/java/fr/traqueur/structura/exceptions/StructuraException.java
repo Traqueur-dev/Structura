@@ -183,7 +183,8 @@ public class StructuraException extends RuntimeException {
             message.append(' ');
         }
         message.append(detail);
-        if (path != null) {
+        // An unknown key already names itself and its section
+        if (path != null && kind != Kind.UNKNOWN_KEY) {
             message.append(" (").append(path).append(')');
         }
         return message.toString();

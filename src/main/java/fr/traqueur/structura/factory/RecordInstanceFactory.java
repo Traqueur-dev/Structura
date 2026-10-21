@@ -2,11 +2,13 @@ package fr.traqueur.structura.factory;
 
 import fr.traqueur.structura.annotations.Options;
 import fr.traqueur.structura.annotations.Polymorphic;
+import fr.traqueur.structura.annotations.Strict;
 import fr.traqueur.structura.api.Loadable;
 import fr.traqueur.structura.conversion.ReadSession;
 import fr.traqueur.structura.conversion.ValueConverter;
 import fr.traqueur.structura.exceptions.StructuraException;
 import fr.traqueur.structura.mapping.FieldMapper;
+import fr.traqueur.structura.registries.PolymorphicRegistry;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
@@ -16,7 +18,9 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Supplier;
 
@@ -57,11 +61,39 @@ public class RecordInstanceFactory {
      * @throws StructuraException if creation fails
      */
     public Object createInstance(Map<String, Object> data, Class<?> recordClass, String prefix) {
+        return createInstance(data, recordClass, prefix, !ReadSession.isShared(data));
+    }
+
+    /**
+     * Creates a record instance from YAML data.
+     *
+     * @param data the YAML data as Map
+     * @param recordClass the record class to create
+     * @param prefix the path of the node in the document
+     * @param ownsNode whether the record owns its node: false for an inline record or a key record
+     *                 reading their parent's node, whose keys the parent checks
+     * @return the created and populated record instance, or null if a component failed and its
+     *         error was collected
+     */
+    private Object createInstance(Map<String, Object> data, Class<?> recordClass, String prefix, boolean ownsNode) {
         validateInput(data, recordClass);
 
+        if (recordClass.isAnnotationPresent(Strict.class)) {
+            return ReadSession.strictScope(() -> buildInstance(data, recordClass, prefix, ownsNode, true));
+        }
+        return buildInstance(data, recordClass, prefix, ownsNode, ReadSession.strictKeys());
+    }
+
+    private Object buildInstance(Map<String, Object> data, Class<?> recordClass, String prefix,
+                                 boolean ownsNode, boolean strict) {
         RecordComponent[] components = recordClass.getRecordComponents();
         RecordComponent keyComponent = fieldMapper.findKeyComponent(components);
         int errorsBefore = ReadSession.errorCount();
+
+        if (strict && ownsNode) {
+            // Before the components: a typo is the reason a key is missing, report it first
+            checkUnknownKeys(data, recordClass, keyComponent, prefix);
+        }
 
         Object[] args;
         if (keyComponent != null) {
@@ -172,7 +204,7 @@ public class RecordInstanceFactory {
             RecordComponent component = components[i];
 
             if (component.getName().equals(keyComponent.getName())) {
-                args[i] = resolveOrReport(() -> createInstance(keyComponentData, component.getType(), prefix));
+                args[i] = resolveOrReport(() -> createInstance(keyComponentData, component.getType(), prefix, false));
             } else {
                 Parameter parameter = getConstructorParameter(recordClass, i);
                 args[i] = resolveOrReport(() -> resolveComponentValue(component, parameter, otherFieldsData, prefix));
@@ -213,7 +245,7 @@ public class RecordInstanceFactory {
         if (isInlineField(parameter, component.getType())) {
             // For concrete records, create instance directly with parent data
             if (component.getType().isRecord()) {
-                return createInstance(data, component.getType(), prefix);
+                return createInstance(data, component.getType(), prefix, false);
             }
 
             // For maps, absorb every key of the node that no sibling component claims
@@ -227,7 +259,9 @@ public class RecordInstanceFactory {
                 String fullPath = fieldMapper.buildPath(prefix, fieldName);
 
                 // Enrich parent data with discriminator key for polymorphic resolution
-                Map<String, Object> enrichedData = enrichParentDataWithDiscriminator(data, component.getType(), fullPath);
+                // The sub-type reads its parent's node: its keys are checked here, by the parent
+                Map<String, Object> enrichedData = ReadSession.share(
+                        enrichParentDataWithDiscriminator(data, component.getType(), fullPath));
 
                 return valueConverter.convert(enrichedData, component.getGenericType(), component.getType(), prefix);
             }
@@ -255,6 +289,193 @@ public class RecordInstanceFactory {
         return value != null
                 ? valueConverter.convert(value, component.getGenericType(), component.getType(), fullPath)
                 : null;
+    }
+
+    /**
+     * Strict mode: reports every key of the record's node that none of its components reads,
+     * with the closest known key as a suggestion.
+     *
+     * @param data the node of the record
+     * @param recordClass the record class
+     * @param keyComponent the component marked {@code isKey}, or null
+     * @param prefix the path of the node in the document
+     */
+    private void checkUnknownKeys(Map<String, Object> data, Class<?> recordClass,
+                                  RecordComponent keyComponent, String prefix) {
+        Map<?, ?> node = data;
+        String nodePath = prefix;
+        RecordComponent skipped = null;
+
+        if (keyComponent != null && fieldMapper.isSimpleKeyMapping(data, keyComponent)) {
+            // { id: { ...the other components... } }: the single key is a value, the inner node holds the keys
+            Map.Entry<String, Object> entry = data.entrySet().iterator().next();
+            if (!(entry.getValue() instanceof Map<?, ?> inner)) {
+                return;
+            }
+            node = inner;
+            nodePath = fieldMapper.buildPath(prefix, String.valueOf(entry.getKey()));
+            skipped = keyComponent;
+        }
+
+        Set<String> known = new LinkedHashSet<>();
+        if (!collectReadKeys(recordClass, node, skipped, known)) {
+            return; // an inline map absorbs every remaining key
+        }
+
+        for (Object rawKey : node.keySet()) {
+            String key = String.valueOf(rawKey);
+            if (!known.contains(key)) {
+                ReadSession.report(unknownKey(key, nodePath, known));
+            }
+        }
+    }
+
+    /**
+     * Collects the keys a record reads at the level of a node: its components' keys, the keys of its
+     * inline components (recursively), the discriminators of its polymorphic components and of the
+     * polymorphic interfaces it implements, and for a fully inline polymorphic component, the keys of
+     * the sub-type its discriminator selects.
+     *
+     * @param recordClass the record class
+     * @param node the node being read
+     * @param skipped a component that reads nothing from the node (the key of a simple key mapping), or null
+     * @param known the set to populate
+     * @return false if an inline map absorbs every remaining key, so that no key is unknown
+     */
+    private boolean collectReadKeys(Class<?> recordClass, Map<?, ?> node, RecordComponent skipped, Set<String> known) {
+        RecordComponent[] components = recordClass.getRecordComponents();
+
+        for (int i = 0; i < components.length; i++) {
+            RecordComponent component = components[i];
+            if (skipped != null && component.getName().equals(skipped.getName())) {
+                continue;
+            }
+            Parameter parameter = getConstructorParameter(recordClass, i);
+            Class<?> type = component.getType();
+
+            if (isInlineField(parameter, type)) {
+                if (type.isRecord()) {
+                    if (!collectReadKeys(type, node, null, known)) {
+                        return false;
+                    }
+                } else if (Map.class.isAssignableFrom(type)) {
+                    return false;
+                } else if (!collectPolymorphicKeys(type, node, known)) {
+                    return false;
+                }
+                continue;
+            }
+
+            Options options = parameter.getAnnotation(Options.class);
+            if (options != null && options.isKey() && type.isRecord()) {
+                // Complex key mapping: the key record's components sit at this level
+                if (!collectReadKeys(type, node, null, known)) {
+                    return false;
+                }
+                continue;
+            }
+
+            String name = fieldMapper.getEffectiveFieldName(parameter, component.getName());
+            // A dotted name reads a nested node: its first segment is the key at this level
+            int dot = name.indexOf('.');
+            known.add(dot < 0 ? name : name.substring(0, dot));
+
+            if (isPolymorphicWithInline(type)) {
+                known.add(type.getAnnotation(Polymorphic.class).key());
+            }
+        }
+
+        collectDiscriminators(recordClass, known);
+        return true;
+    }
+
+    /**
+     * The keys of a fully inline polymorphic component: its discriminator, and the keys of the
+     * sub-type the discriminator selects (an unknown type is reported by the conversion itself).
+     */
+    private boolean collectPolymorphicKeys(Class<?> type, Map<?, ?> node, Set<String> known) {
+        String discriminator = type.getAnnotation(Polymorphic.class).key();
+        known.add(discriminator);
+        Object typeName = node.get(discriminator);
+        if (typeName == null) {
+            return true;
+        }
+        try {
+            @SuppressWarnings("unchecked")
+            Class<? extends Loadable> polymorphicType = (Class<? extends Loadable>) type;
+            Optional<? extends Class<?>> subType = PolymorphicRegistry.get(polymorphicType).get(typeName.toString());
+            return subType.isEmpty() || collectReadKeys(subType.get(), node, null, known);
+        } catch (StructuraException e) {
+            return true;
+        }
+    }
+
+    /**
+     * A sub-type of a polymorphic interface finds its discriminator in its own node.
+     */
+    private static void collectDiscriminators(Class<?> type, Set<String> known) {
+        for (Class<?> implemented : type.getInterfaces()) {
+            Polymorphic polymorphic = implemented.getAnnotation(Polymorphic.class);
+            if (polymorphic != null) {
+                known.add(polymorphic.key());
+            }
+            collectDiscriminators(implemented, known);
+        }
+    }
+
+    /**
+     * The error for an unknown key, suggesting the closest known key when it is close enough to be a typo.
+     */
+    private StructuraException unknownKey(String key, String nodePath, Set<String> known) {
+        StringBuilder detail = new StringBuilder("unknown key '").append(key).append('\'');
+        if (!nodePath.isEmpty()) {
+            detail.append(" under '").append(nodePath).append('\'');
+        }
+        closestKey(key, known).ifPresent(suggestion ->
+                detail.append(" (did you mean '").append(suggestion).append("'?)"));
+        return new StructuraException(StructuraException.Kind.UNKNOWN_KEY, detail.toString(),
+                fieldMapper.buildPath(nodePath, key));
+    }
+
+    /**
+     * The known key closest to a key by edit distance, if it is close enough to be a typo.
+     */
+    static Optional<String> closestKey(String key, Set<String> known) {
+        String best = null;
+        int bestDistance = Integer.MAX_VALUE;
+        for (String candidate : known) {
+            int distance = editDistance(key, candidate);
+            if (distance < bestDistance) {
+                best = candidate;
+                bestDistance = distance;
+            }
+        }
+        int tolerance = Math.max(2, key.length() / 3);
+        return best != null && bestDistance <= tolerance && bestDistance < key.length()
+                ? Optional.of(best)
+                : Optional.empty();
+    }
+
+    /**
+     * The Levenshtein distance between two keys.
+     */
+    private static int editDistance(String a, String b) {
+        int[] previous = new int[b.length() + 1];
+        int[] current = new int[b.length() + 1];
+        for (int j = 0; j <= b.length(); j++) {
+            previous[j] = j;
+        }
+        for (int i = 1; i <= a.length(); i++) {
+            current[0] = i;
+            for (int j = 1; j <= b.length(); j++) {
+                int substitution = previous[j - 1] + (a.charAt(i - 1) == b.charAt(j - 1) ? 0 : 1);
+                current[j] = Math.min(substitution, Math.min(previous[j] + 1, current[j - 1] + 1));
+            }
+            int[] swap = previous;
+            previous = current;
+            current = swap;
+        }
+        return previous[b.length()];
     }
 
     /**
