@@ -13,6 +13,7 @@ import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Queue;
 import java.util.Set;
 
 import static fr.traqueur.structura.fixtures.TestModels.*;
@@ -198,7 +199,7 @@ class ValueConverterTest {
             Type listType = ValueConverterTest.class.getMethod("getStringList").getGenericReturnType();
 
             StructuraException exception = assertThrows(StructuraException.class, () ->
-                    valueConverter.convert(List.of("a"), listType, Collection.class, "test")
+                    valueConverter.convert(List.of("a"), listType, Queue.class, "test")
             );
             assertTrue(exception.getMessage().contains("Unsupported collection type"));
         }

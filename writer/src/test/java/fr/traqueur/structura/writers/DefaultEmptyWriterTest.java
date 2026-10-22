@@ -11,6 +11,7 @@ import org.yaml.snakeyaml.Yaml;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
@@ -27,6 +28,8 @@ class DefaultEmptyWriterTest {
     public record Dialog(@DefaultString("Hello") String title,
                          @DefaultEmpty List<String> body,
                          @DefaultEmpty Map<String, Input> inputs) implements Loadable {}
+
+    public record Sizes(Collection<Integer> sizes) implements Loadable {}
 
     @TempDir
     Path dir;
@@ -53,6 +56,17 @@ class DefaultEmptyWriterTest {
 
         assertEquals(Map.of("title", "Hi", "inputs", Map.of("name", Map.of("label", "Name"))),
                 new Yaml().load(Files.readString(file)));
+    }
+
+    @Test
+    @DisplayName("a plain Collection component is written as a list and read back")
+    void collectionRoundTrip() throws Exception {
+        Path file = dir.resolve("sizes.yml");
+
+        Structura.write(file, new Sizes(List.of(3, 1, 2)));
+
+        assertEquals(Map.of("sizes", List.of(3, 1, 2)), new Yaml().load(Files.readString(file)));
+        assertEquals(List.of(3, 1, 2), List.copyOf(Structura.load(file, Sizes.class).sizes()));
     }
 
     @Test

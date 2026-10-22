@@ -13,9 +13,7 @@ import java.lang.annotation.Target;
  * public record Dialog(&#64;DefaultEmpty List&lt;Body&gt; body, &#64;DefaultEmpty Map&lt;String, Input&gt; inputs) implements Loadable {}
  * </pre>
  *
- * <p>On any other type it is an error, reported when the record is read. A component declared as a plain
- * {@code Collection} gets its empty default, but a present value can only be read into a {@code List} or a
- * {@code Set}: declare one of those to read both.</p>
+ * <p>On any other type it is an error, reported when the record is read.</p>
  */
 @Target({ElementType.PARAMETER, ElementType.FIELD, ElementType.RECORD_COMPONENT})
 @Retention(RetentionPolicy.RUNTIME)
