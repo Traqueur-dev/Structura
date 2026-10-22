@@ -1,12 +1,15 @@
 package fr.traqueur.structura.registries;
 
 import fr.traqueur.structura.annotations.defaults.*;
+import fr.traqueur.structura.exceptions.StructuraException;
 import fr.traqueur.structura.references.ReferenceRegistry;
 import fr.traqueur.structura.references.Reference;
 
 import java.lang.annotation.Annotation;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
@@ -78,6 +81,7 @@ public class DefaultValueRegistry {
      */
     public Object getDefaultValue(Class<?> type, List<Annotation> annotations) {
         Map<Class<? extends Annotation>, Function<Annotation, Object>> typeHandlers = handlers.get(type);
+        checkDefaultEmpty(type, annotations, typeHandlers);
         if (typeHandlers == null) {
             return null;
         }
@@ -95,6 +99,28 @@ public class DefaultValueRegistry {
     }
 
     /**
+     * {@code @DefaultEmpty} only makes sense on a collection or a map: anywhere else it is a mistake, not a
+     * value to ignore.
+     */
+    private static void checkDefaultEmpty(Class<?> type, List<Annotation> annotations,
+                                          Map<Class<? extends Annotation>, Function<Annotation, Object>> typeHandlers) {
+        boolean defaultEmpty = annotations.stream().anyMatch(annotation -> annotation instanceof DefaultEmpty);
+        if (defaultEmpty && (typeHandlers == null || !typeHandlers.containsKey(DefaultEmpty.class))) {
+            throw new StructuraException(defaultEmptyMisuse(type));
+        }
+    }
+
+    /**
+     * The message of a {@code @DefaultEmpty} on a type it does not apply to.
+     *
+     * @param type the type annotated
+     * @return the message
+     */
+    public static String defaultEmptyMisuse(Class<?> type) {
+        return "@DefaultEmpty applies to a List, Set, Collection or Map, not " + type.getSimpleName();
+    }
+
+    /**
      * Registers default handlers for common types and their corresponding default value annotations.
      * This method is called during the initialization of the registry.
      */
@@ -108,6 +134,11 @@ public class DefaultValueRegistry {
         register(Integer.class, DefaultInt.class, DefaultInt::value);
         register(double.class, DefaultDouble.class, DefaultDouble::value);
         register(Double.class, DefaultDouble.class, DefaultDouble::value);
+        // @DefaultEmpty: an absent collection or map is empty, and immutable
+        register(List.class, DefaultEmpty.class, annotation -> List.of());
+        register(Collection.class, DefaultEmpty.class, annotation -> List.of());
+        register(Set.class, DefaultEmpty.class, annotation -> Set.of());
+        register(Map.class, DefaultEmpty.class, annotation -> Map.of());
         register(Reference.class, DefaultReference.class, annotation -> ReferenceRegistry.getInstance().resolve(annotation.key(), annotation.type()));
     }
 
