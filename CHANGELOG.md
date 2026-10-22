@@ -3,6 +3,44 @@
 All notable changes to Structura. Versions follow [semantic versioning](https://semver.org):
 a minor version adds features without breaking existing code.
 
+## 2.10.0 — Menus: the key present, empty defaults, generic records
+
+### Added
+
+- **`@Polymorphic(useKey = true, inline = true)`: the sub-type is the key present.** The validator used to
+  refuse the combination; it now means that exactly one of the registered names is present in the section and
+  selects the sub-type. A sub-type with a component named like the key reads the whole section
+  (`tab: {choice: [chat], initial: chat}`); any other reads the value of the key — a section
+  (`select: {tab: chat}`), or a single value read into its only component (`toggle: view.chat`). On an inline
+  component the key sits next to the parent's keys; elsewhere (map value, list element, plain component) the
+  value's own section holds it. Strict mode knows the registered names; the writer writes the key then the
+  value; the schema offers exactly one of the keys (`Schema.Discriminator.PRESENT_KEY`).
+- **`@DefaultEmpty`**: an absent `List`, `Set`, `Collection` or `Map` is an immutable empty value instead of
+  `MISSING` (or `null` when optional). Followed by enum fields, the schema, `saveDefault` and `writeOverrides`.
+- **Type variables read by their bound**: `record Menu<S extends Surface>(..., S surface)` reads, describes and
+  writes `surface` as a `Surface`. `TypeToken.rawTypeOf(Type)` exposes the rule.
+- `StructuraException#pointAtKey()`: an error positioned on its key rather than its value.
+- `mapping.Polymorphism`: the four polymorphic forms, for tools.
+
+### Changed
+
+- Polymorphic registries keep their registration order (`availableNames()`, error messages).
+- The message of an error pointing at a key (an unknown key, two keys set together) no longer repeats the
+  path at its end: it already names the key and its section.
+
+### Messages
+
+| Case | 2.9.0 | 2.10.0 |
+|------|-------|--------|
+| `@Polymorphic(useKey = true, inline = true)` in use | `Invalid @Polymorphic configuration: 'inline' and 'useKey' cannot both be true in ...` | *read* |
+| No registered key on a required component | — | `1:1: 'control' is required but not provided: set one of toggle, select, step (control)` |
+| Two registered keys | — | `2:44: 'toggle' and 'select' cannot both be set under 'buttons[0]': a Control is one of toggle, select, step` |
+| A single value for a sub-type with several components | — | `2:8: 'creak' cannot be read as a Sound, which reads name, volume: write a section under 'sound' (sound)` |
+| `toogle:` in strict mode | — | `unknown key 'toogle' under 'buttons[0]' (did you mean 'toggle'?)` |
+| An absent `@DefaultEmpty List<Body> body` | `'body' is required but not provided (body)` | *empty list* |
+| `@DefaultEmpty String title` | — | `@DefaultEmpty on Misplaced.title: @DefaultEmpty applies to a List, Set, Collection or Map, not String (title)` |
+| `record Menu<S extends Surface>(..., S surface)` | `Unsupported type: S` | *read as a Surface* |
+
 ## 2.9.0 — Writers on par with readers
 
 ### Fixed

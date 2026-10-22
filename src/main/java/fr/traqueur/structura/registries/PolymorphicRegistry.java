@@ -3,7 +3,7 @@ package fr.traqueur.structura.registries;
 import fr.traqueur.structura.api.Loadable;
 import fr.traqueur.structura.exceptions.StructuraException;
 
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -68,7 +68,7 @@ public class PolymorphicRegistry<T extends Loadable> {
      * A map that holds the registered classes for this registry.
      * The key is the name of the class (in lowercase), and the value is the class itself.
      */
-    private final Map<String, Class<? extends T>> loaders = new HashMap<>();
+    private final Map<String, Class<? extends T>> loaders = new LinkedHashMap<>();
 
     /**
      * Registers a class in the registry using its simple name in lowercase.

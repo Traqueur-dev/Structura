@@ -8,17 +8,22 @@ import fr.traqueur.structura.conversion.ReadSession;
 import fr.traqueur.structura.conversion.ValueConverter;
 import fr.traqueur.structura.exceptions.StructuraException;
 import fr.traqueur.structura.mapping.FieldMapper;
+import fr.traqueur.structura.mapping.Polymorphism;
 import fr.traqueur.structura.mapping.UnknownKeys;
+import fr.traqueur.structura.registries.PolymorphicRegistry;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Parameter;
 import java.lang.reflect.RecordComponent;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -253,6 +258,11 @@ public class RecordInstanceFactory {
                 return resolveInlineMapValue(component, parameter, data, prefix);
             }
 
+            // For @Polymorphic(useKey = true, inline = true), the registered key present in the node is the sub-type
+            if (Polymorphism.isKeySelected(component.getType())) {
+                return resolveKeySelectedComponent(component, parameter, data, prefix);
+            }
+
             // For polymorphic interfaces, enrich parent data with discriminator and convert
             if (component.getType().isInterface() && isPolymorphicWithInline(component.getType())) {
                 String fieldName = fieldMapper.getEffectiveFieldName(parameter, component.getName());
@@ -269,11 +279,17 @@ public class RecordInstanceFactory {
 
         String fieldName = fieldMapper.getEffectiveFieldName(parameter, component.getName());
         String fullPath = fieldMapper.buildPath(prefix, fieldName);
+        fieldMapper.checkDefaultEmpty(parameter, component.getName(), fullPath);
 
         Object value = fieldMapper.getValueFromPath(data, fieldName);
 
         if (value == null) {
             value = fieldMapper.getDefaultValue(parameter, fullPath, fieldName);
+            if ((value instanceof Collection<?> collection && collection.isEmpty())
+                    || (value instanceof Map<?, ?> map && map.isEmpty())) {
+                // @DefaultEmpty: the immutable empty value as is, not a mutable copy made by the conversion
+                return value;
+            }
         }
 
         // Handle inline polymorphic keys
@@ -289,6 +305,146 @@ public class RecordInstanceFactory {
         return value != null
                 ? valueConverter.convert(value, component.getGenericType(), component.getType(), fullPath)
                 : null;
+    }
+
+    /**
+     * An inline {@code @Polymorphic(useKey = true, inline = true)} component: the registered key present in
+     * the record's own node selects the sub-type. With no such key, an optional component is null and any
+     * other is missing.
+     */
+    private Object resolveKeySelectedComponent(RecordComponent component, Parameter parameter,
+                                               Map<String, Object> data, String prefix) {
+        Class<?> type = component.getType();
+        PolymorphicRegistry<?> registry = keySelectedRegistry(type);
+        if (presentKeys(data, registry).isEmpty()) {
+            if (fieldMapper.isOptional(parameter)) {
+                return null;
+            }
+            String fieldName = fieldMapper.getEffectiveFieldName(parameter, component.getName());
+            throw new StructuraException(StructuraException.Kind.MISSING,
+                    "'" + fieldName + "' is required but not provided: set one of "
+                            + String.join(", ", registry.availableNames()),
+                    fieldMapper.buildPath(prefix, fieldName));
+        }
+        return readKeySelected(data, type, prefix, true);
+    }
+
+    /**
+     * Reads a {@code @Polymorphic(useKey = true, inline = true)} value from a node: exactly one of the
+     * registered keys must be present, and it names the sub-type.
+     *
+     * <ul>
+     *   <li>When the sub-type has a component named like the key ({@code Choice(List<String> choice, ...)}
+     *       selected by {@code choice}), it reads the whole node: {@code {choice: [a, b], initial: a}}.</li>
+     *   <li>Otherwise it reads the value of the key: a section ({@code select: {tab: chat}}), or a single
+     *       value read into its only component ({@code toggle: view.chat} for {@code Toggle(String target)}).</li>
+     * </ul>
+     *
+     * @param value the node: the parent's node for an inline component, the value's own node otherwise
+     * @param type the polymorphic interface
+     * @param nodePath the path of the node in the document
+     * @param shared whether the node belongs to a parent record, which checks its keys in strict mode
+     * @return the sub-type instance, or null if it failed and its error was collected
+     * @throws StructuraException if no registered key, or more than one, is present
+     */
+    public Object readKeySelected(Object value, Class<?> type, String nodePath, boolean shared) {
+        PolymorphicRegistry<?> registry = keySelectedRegistry(type);
+        String names = String.join(", ", registry.availableNames());
+        if (!(value instanceof Map<?, ?> rawNode)) {
+            throw new StructuraException(StructuraException.Kind.WRONG_TYPE,
+                    "expected a section with one of " + names + " but got " + ValueConverter.describe(value), nodePath);
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> node = (Map<String, Object>) rawNode;
+
+        List<String> present = presentKeys(node, registry);
+        if (present.isEmpty()) {
+            throw new StructuraException(StructuraException.Kind.MISSING,
+                    "a " + type.getSimpleName() + " needs one of " + names, nodePath);
+        }
+        if (present.size() > 1) {
+            throw new StructuraException(StructuraException.Kind.INVALID,
+                    "'" + present.get(0) + "' and '" + present.get(1) + "' cannot both be set"
+                            + (nodePath.isEmpty() ? "" : " under '" + nodePath + "'")
+                            + ": a " + type.getSimpleName() + " is one of " + names,
+                    fieldMapper.buildPath(nodePath, present.get(1))).pointAtKey();
+        }
+
+        String key = present.getFirst();
+        Class<?> subType = registry.get(key).orElseThrow();
+        if (readsWholeNode(subType, key)) {
+            return createInstance(node, subType, nodePath, !shared);
+        }
+
+        if (!shared && ReadSession.strictKeys()) {
+            // The node holds the key alone: a neighbour is unknown, and suggested among the registered keys
+            for (Object other : node.keySet()) {
+                if (!key.equals(String.valueOf(other))) {
+                    ReadSession.report(UnknownKeys.error(String.valueOf(other), nodePath, registry.availableNames()));
+                }
+            }
+        }
+
+        String valuePath = fieldMapper.buildPath(nodePath, key);
+        Object subNode = node.get(key);
+        if (subNode == null) {
+            return createInstance(new LinkedHashMap<>(), subType, valuePath, true);
+        }
+        if (subNode instanceof Map<?, ?> section) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> sectionData = (Map<String, Object>) section;
+            return createInstance(sectionData, subType, valuePath, !ReadSession.isShared(sectionData));
+        }
+        return readSingleValue(subNode, subType, key, valuePath);
+    }
+
+    /**
+     * A single value under the key of a sub-type ({@code toggle: view.chat}) is read into its only
+     * component; a sub-type with several components, or an inline one, needs a section.
+     */
+    private Object readSingleValue(Object value, Class<?> subType, String key, String valuePath) {
+        RecordComponent[] components = subType.getRecordComponents();
+        Parameter parameter = components.length == 1 ? getConstructorParameter(subType, 0) : null;
+        if (parameter == null || isInlineField(parameter, components[0].getType())) {
+            String reads = String.join(", ", Arrays.stream(components).map(FieldMapper::keyOf).toList());
+            throw new StructuraException(StructuraException.Kind.WRONG_TYPE,
+                    ValueConverter.describe(value) + " cannot be read as a " + subType.getSimpleName()
+                            + ", which reads " + (reads.isEmpty() ? "nothing" : reads)
+                            + ": write a section under '" + key + "'", valuePath);
+        }
+        int errorsBefore = ReadSession.errorCount();
+        Object argument = valueConverter.convert(value, components[0].getGenericType(), components[0].getType(), valuePath);
+        if (ReadSession.errorCount() > errorsBefore) {
+            return null;
+        }
+        return instantiateRecord(subType, new Object[]{argument}, valuePath);
+    }
+
+    /**
+     * Whether a sub-type selected by a key reads the whole node: it has a component named like the key.
+     */
+    private static boolean readsWholeNode(Class<?> subType, String key) {
+        return subType.isRecord() && Arrays.stream(subType.getRecordComponents())
+                .anyMatch(component -> FieldMapper.keyOf(component).equals(key));
+    }
+
+    /**
+     * The registered keys present in a node, in the order of the document.
+     */
+    private static List<String> presentKeys(Map<?, ?> node, PolymorphicRegistry<?> registry) {
+        List<String> present = new ArrayList<>();
+        for (Object key : node.keySet()) {
+            String name = String.valueOf(key);
+            if (registry.get(name).isPresent()) {
+                present.add(name);
+            }
+        }
+        return present;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static PolymorphicRegistry<?> keySelectedRegistry(Class<?> type) {
+        return ReadSession.polymorphicRegistry((Class<? extends Loadable>) type);
     }
 
     /**
@@ -360,6 +516,10 @@ public class RecordInstanceFactory {
                     }
                 } else if (Map.class.isAssignableFrom(type)) {
                     return false;
+                } else if (Polymorphism.isKeySelected(type)) {
+                    if (!collectKeySelectedKeys(type, node, known)) {
+                        return false;
+                    }
                 } else if (!collectPolymorphicKeys(type, node, known)) {
                     return false;
                 }
@@ -411,12 +571,29 @@ public class RecordInstanceFactory {
     }
 
     /**
+     * The keys of an inline {@code @Polymorphic(useKey = true, inline = true)} component: every registered
+     * name (so that a typo is suggested one of them), and when the selected sub-type reads the whole node,
+     * its keys too.
+     */
+    private boolean collectKeySelectedKeys(Class<?> type, Map<?, ?> node, Set<String> known) {
+        PolymorphicRegistry<?> registry = keySelectedRegistry(type);
+        known.addAll(registry.availableNames());
+        List<String> present = presentKeys(node, registry);
+        if (present.size() != 1) {
+            return true;
+        }
+        Class<?> subType = registry.get(present.getFirst()).orElseThrow();
+        return !readsWholeNode(subType, present.getFirst()) || collectReadKeys(subType, node, null, known);
+    }
+
+    /**
      * A sub-type of a polymorphic interface finds its discriminator in its own node.
      */
     private static void collectDiscriminators(Class<?> type, Set<String> known) {
         for (Class<?> implemented : type.getInterfaces()) {
             Polymorphic polymorphic = implemented.getAnnotation(Polymorphic.class);
-            if (polymorphic != null) {
+            // A key-selected sub-type has no discriminator key: the key present names it
+            if (polymorphic != null && !Polymorphism.isKeySelected(implemented)) {
                 known.add(polymorphic.key());
             }
             collectDiscriminators(implemented, known);
@@ -530,6 +707,17 @@ public class RecordInstanceFactory {
                     );
                 }
 
+                if (Polymorphism.isKeySelected(type)) {
+                    throw new StructuraException(
+                            "The inline map '" + describeComponent(inlineMapComponent) +
+                                    "' cannot live next to the inline polymorphic component '" +
+                                    recordClass.getSimpleName() + "." + component.getName() +
+                                    "': a @Options(inline = true) + @Polymorphic(useKey = true, inline = true) component " +
+                                    "is selected by the registered key present in the node, so the map would silently " +
+                                    "swallow it. Remove @Options(inline = true) from one of the two."
+                    );
+                }
+
                 throw new StructuraException(
                         "The inline map '" + describeComponent(inlineMapComponent) +
                                 "' cannot live next to the fully inline polymorphic component '" +
@@ -564,15 +752,8 @@ public class RecordInstanceFactory {
      * @throws StructuraException if both inline and useKey are true
      */
     private boolean isPolymorphicWithInline(Class<?> type) {
-        if (!type.isInterface() || !Loadable.class.isAssignableFrom(type)) {
-            return false;
-        }
-        Polymorphic polymorphic = type.getAnnotation(Polymorphic.class);
-        if (polymorphic == null) {
-            return false;
-        }
-
-        return polymorphic.inline();
+        // useKey + inline is another form: the sub-type is the key present, there is no discriminator key
+        return type.isInterface() && Polymorphism.isInlineDiscriminated(type);
     }
 
     /**
@@ -711,15 +892,8 @@ public class RecordInstanceFactory {
      * @throws StructuraException if both inline and useKey are true
      */
     private boolean isPolymorphicWithKeyAsDiscriminator(Class<?> type) {
-        if (!type.isInterface() || !Loadable.class.isAssignableFrom(type)) {
-            return false;
-        }
-        Polymorphic polymorphic = type.getAnnotation(Polymorphic.class);
-        if (polymorphic == null) {
-            return false;
-        }
-
-        return polymorphic.useKey();
+        // useKey + inline is another form: the sub-type is the key present in the value's own section
+        return type.isInterface() && Polymorphism.isKeyDiscriminated(type);
     }
 
     /**

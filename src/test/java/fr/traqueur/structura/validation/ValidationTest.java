@@ -30,16 +30,11 @@ class ValidationTest {
     @DisplayName("Polymorphic Validation Tests")
     class PolymorphicValidationTest {
         @Test
-        @DisplayName("Should fail validation for polymorphic with invalid config")
-        void shouldFailValidationForPolymorphicMissUsage() {
+        @DisplayName("Should accept @Polymorphic(useKey = true, inline = true): the sub-type is the key present")
+        void shouldAcceptKeySelectedPolymorphic() {
             SimpleFieldConfigInline config = new SimpleFieldConfigInline(new FoodMetadataInline(5, 0.5));
 
-            ValidationException exception = assertThrows(ValidationException.class, () ->
-                    validator.validate(config, "")
-            );
-
-            assertContainsMessage(exception, "Invalid @Polymorphic configuration",
-                    "inline", "useKey", "cannot both be true");
+            assertDoesNotThrow(() -> validator.validate(config, ""));
         }
     }
 
