@@ -18,6 +18,7 @@ import java.lang.reflect.Parameter;
 import java.lang.reflect.RecordComponent;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -278,11 +279,17 @@ public class RecordInstanceFactory {
 
         String fieldName = fieldMapper.getEffectiveFieldName(parameter, component.getName());
         String fullPath = fieldMapper.buildPath(prefix, fieldName);
+        fieldMapper.checkDefaultEmpty(parameter, component.getName(), fullPath);
 
         Object value = fieldMapper.getValueFromPath(data, fieldName);
 
         if (value == null) {
             value = fieldMapper.getDefaultValue(parameter, fullPath, fieldName);
+            if ((value instanceof Collection<?> collection && collection.isEmpty())
+                    || (value instanceof Map<?, ?> map && map.isEmpty())) {
+                // @DefaultEmpty: the immutable empty value as is, not a mutable copy made by the conversion
+                return value;
+            }
         }
 
         // Handle inline polymorphic keys

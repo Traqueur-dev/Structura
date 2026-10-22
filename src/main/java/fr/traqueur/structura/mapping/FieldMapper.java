@@ -1,6 +1,7 @@
 package fr.traqueur.structura.mapping;
 
 import fr.traqueur.structura.annotations.Options;
+import fr.traqueur.structura.annotations.defaults.DefaultEmpty;
 import fr.traqueur.structura.exceptions.StructuraException;
 import fr.traqueur.structura.registries.DefaultValueRegistry;
 
@@ -269,8 +270,13 @@ public class FieldMapper {
      * @throws StructuraException of kind MISSING if the field is required but missing
      */
     public Object getDefaultValue(Parameter parameter, String path, String key) {
-        Object defaultValue = DefaultValueRegistry.getInstance()
-                .getDefaultValue(parameter.getType(), List.of(parameter.getAnnotations()));
+        Object defaultValue;
+        try {
+            defaultValue = DefaultValueRegistry.getInstance()
+                    .getDefaultValue(parameter.getType(), List.of(parameter.getAnnotations()));
+        } catch (StructuraException e) {
+            throw e.atPath(path);
+        }
 
         if (defaultValue == null && !isOptional(parameter)) {
             throw new StructuraException(StructuraException.Kind.MISSING,
@@ -278,6 +284,28 @@ public class FieldMapper {
         }
 
         return defaultValue;
+    }
+
+    /**
+     * Refuses a {@code @DefaultEmpty} on a component that is not a {@code List}, {@code Set},
+     * {@code Collection} or {@code Map}, whether or not its key is present: the declaration is wrong.
+     *
+     * @param parameter the constructor parameter
+     * @param componentName the name of the record component, for the error
+     * @param path the path of the component in the document, for the error
+     * @throws StructuraException if the annotation is misplaced
+     */
+    public void checkDefaultEmpty(Parameter parameter, String componentName, String path) {
+        if (!parameter.isAnnotationPresent(DefaultEmpty.class)) {
+            return;
+        }
+        Class<?> type = parameter.getType();
+        if (type != List.class && type != Set.class && type != Collection.class && type != Map.class) {
+            String owner = parameter.getDeclaringExecutable().getDeclaringClass().getSimpleName();
+            throw new StructuraException(StructuraException.Kind.OTHER,
+                    "@DefaultEmpty on " + owner + "." + componentName + ": "
+                            + DefaultValueRegistry.defaultEmptyMisuse(type), path);
+        }
     }
 
     /**

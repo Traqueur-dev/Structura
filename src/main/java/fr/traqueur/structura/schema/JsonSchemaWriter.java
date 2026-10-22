@@ -278,7 +278,10 @@ final class JsonSchemaWriter {
     }
 
     private static boolean isJsonValue(Object value) {
-        return value instanceof String || value instanceof Number || value instanceof Boolean || value instanceof Enum<?>;
+        return value instanceof String || value instanceof Number || value instanceof Boolean || value instanceof Enum<?>
+                // @DefaultEmpty: [] or {}
+                || (value instanceof Collection<?> collection && collection.isEmpty())
+                || (value instanceof Map<?, ?> map && map.isEmpty());
     }
 
     static String write(Object value) {
