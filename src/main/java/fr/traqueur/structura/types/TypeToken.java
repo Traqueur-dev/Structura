@@ -4,6 +4,8 @@ import fr.traqueur.structura.exceptions.StructuraException;
 
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
+import java.lang.reflect.TypeVariable;
+import java.lang.reflect.WildcardType;
 import java.util.Objects;
 
 /**
@@ -58,6 +60,13 @@ public abstract class TypeToken<T> {
         }
 
         this.type = parameterized.getActualTypeArguments()[0];
+        if (this.type instanceof TypeVariable<?>) {
+            // class Concrete<T> extends TypeToken<T>: the type argument is still unknown
+            throw new StructuraException(
+                    "TypeToken must be instantiated as an anonymous class with a concrete type parameter. " +
+                            "Example: new TypeToken<List<String>>() {}"
+            );
+        }
         this.rawType = (Class<? super T>) getRawType(this.type);
     }
 
@@ -118,17 +127,32 @@ public abstract class TypeToken<T> {
      * Extracts the raw class from a Type.
      */
     private static Class<?> getRawType(Type type) {
-        if (type instanceof Class<?>) {
-            return (Class<?>) type;
-        } else if (type instanceof ParameterizedType parameterizedType) {
-            Type rawType = parameterizedType.getRawType();
-            if (!(rawType instanceof Class<?>)) {
-                throw new StructuraException("Expected a Class, but got: " + rawType);
+        return rawTypeOf(type);
+    }
+
+    /**
+     * The class a type is read as: the class itself, the raw class of a parameterized type, and for a
+     * type variable or a wildcard, its first bound — {@code S} of {@code Menu<S extends Surface>} is read
+     * as a {@code Surface}, {@code T} without a bound as an {@code Object}.
+     *
+     * @param type the type
+     * @return its raw class
+     * @throws StructuraException if the type is of another kind (a generic array)
+     */
+    public static Class<?> rawTypeOf(Type type) {
+        return switch (type) {
+            case Class<?> clazz -> clazz;
+            case ParameterizedType parameterizedType -> {
+                Type rawType = parameterizedType.getRawType();
+                if (!(rawType instanceof Class<?> clazz)) {
+                    throw new StructuraException("Expected a Class, but got: " + rawType);
+                }
+                yield clazz;
             }
-            return (Class<?>) rawType;
-        } else {
-            throw new StructuraException("Unsupported type: " + type);
-        }
+            case TypeVariable<?> variable -> rawTypeOf(variable.getBounds()[0]);
+            case WildcardType wildcard -> rawTypeOf(wildcard.getUpperBounds()[0]);
+            default -> throw new StructuraException("Unsupported type: " + type);
+        };
     }
 
     @Override

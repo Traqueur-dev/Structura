@@ -3,12 +3,14 @@ package fr.traqueur.structura.writers.serializer;
 import fr.traqueur.structura.annotations.Options;
 import fr.traqueur.structura.annotations.Polymorphic;
 import fr.traqueur.structura.api.Loadable;
+import fr.traqueur.structura.exceptions.StructuraException;
 import fr.traqueur.structura.mapping.FieldMapper;
 import fr.traqueur.structura.mapping.Polymorphism;
 import fr.traqueur.structura.references.Reference;
 import fr.traqueur.structura.registries.DefaultValueRegistry;
 import fr.traqueur.structura.registries.PolymorphicRegistries;
 import fr.traqueur.structura.registries.PolymorphicRegistry;
+import fr.traqueur.structura.types.TypeToken;
 import fr.traqueur.structura.writers.exceptions.StructuraWriterException;
 import fr.traqueur.structura.writers.registries.CustomWriterRegistry;
 import org.yaml.snakeyaml.DumperOptions;
@@ -526,11 +528,12 @@ public class LoadableSerializer {
     }
 
     private Class<?> getRawClass(Type type) {
-        return switch (type) {
-            case Class<?> c           -> c;
-            case ParameterizedType pt -> (Class<?>) pt.getRawType();
-            default                   -> Object.class;
-        };
+        // A type variable is written as its bound: S of Menu<S extends Surface> as a Surface
+        try {
+            return TypeToken.rawTypeOf(type);
+        } catch (StructuraException e) {
+            return Object.class;
+        }
     }
 
     private Object readField(RecordComponent component, Object obj) {
