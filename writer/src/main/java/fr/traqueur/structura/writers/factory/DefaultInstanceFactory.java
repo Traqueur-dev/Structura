@@ -59,7 +59,7 @@ public class DefaultInstanceFactory {
             return createDefault(nested);
         }
 
-        if (List.class.isAssignableFrom(type)) return new ArrayList<>();
+        if (List.class.isAssignableFrom(type) || type == Collection.class) return new ArrayList<>();
         if (Set.class.isAssignableFrom(type))  return new HashSet<>();
         if (Map.class.isAssignableFrom(type))  return new LinkedHashMap<>();
 

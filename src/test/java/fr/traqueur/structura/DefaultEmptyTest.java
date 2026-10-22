@@ -76,6 +76,17 @@ class DefaultEmptyTest {
     }
 
     @Test
+    @DisplayName("a plain Collection component is read too, as a list in the order of the document")
+    void collectionPresent() {
+        Dialog dialog = Structura.parse("""
+                title: Hello
+                sizes: [3, 1, 2]
+                """, Dialog.class);
+
+        assertEquals(List.of(3, 1, 2), List.copyOf(dialog.sizes()));
+    }
+
+    @Test
     @DisplayName("without it, an absent collection is still missing")
     void withoutStaysMissing() {
         StructuraException error = assertThrows(StructuraException.class, () -> Structura.parse("{}", Required.class));
