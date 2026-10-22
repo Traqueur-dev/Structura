@@ -56,7 +56,7 @@ public class LoadableSerializer {
     private final FieldMapper fieldMapper;
     private final CustomWriterRegistry writers;
     private final PolymorphicRegistries polymorphics;
-    private final Yaml        yaml;
+    private final DumperOptions dumperOptions;
 
     public LoadableSerializer() {
         this(null, null);
@@ -74,7 +74,15 @@ public class LoadableSerializer {
         opts.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
         opts.setIndent(2);
         opts.setExplicitStart(false);
-        this.yaml = new Yaml(opts);
+        this.dumperOptions = opts;
+    }
+
+    /**
+     * A {@link Yaml} instance is not thread-safe, and a serializer is shared (the global writer is): each
+     * dump gets its own.
+     */
+    private String dump(Object data) {
+        return new Yaml(dumperOptions).dump(data);
     }
 
     /**
@@ -92,7 +100,7 @@ public class LoadableSerializer {
     /** Serializes {@code config} to a block-style YAML string. */
     public String toYaml(Loadable config) {
         Objects.requireNonNull(config, "config cannot be null");
-        return yaml.dump(toMap(config, ""));
+        return dump(toMap(config, ""));
     }
 
     // -------------------------------------------------------------------------
@@ -576,7 +584,7 @@ public class LoadableSerializer {
             String key = fieldMapper.convertSnakeCaseToKebabCase(constant.name());
             result.put(key, toEnumFieldsMap(constant, applyDefaults));
         }
-        return yaml.dump(result);
+        return dump(result);
     }
 
     private Map<String, Object> toEnumFieldsMap(Enum<?> constant, boolean applyDefaults) {

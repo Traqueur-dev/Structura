@@ -89,6 +89,25 @@ class WriterRegistriesTest {
     }
 
     @Test
+    @DisplayName("the shared global writer writes in parallel without corrupting its output")
+    void sharedWriterInParallel() throws Exception {
+        try (ExecutorService pool = Executors.newFixedThreadPool(16)) {
+            List<Future<Boolean>> results = new ArrayList<>();
+            for (int i = 0; i < 2000; i++) {
+                int index = i;
+                results.add(pool.submit(() -> {
+                    Path file = dir.resolve("shared-" + index + ".yml");
+                    Structura.write(file, new Spell(null));
+                    return Files.readString(file).equals("effect: null\n");
+                }));
+            }
+            for (Future<Boolean> result : results) {
+                assertTrue(result.get());
+            }
+        }
+    }
+
+    @Test
     @DisplayName("two writers write in parallel without stepping on each other")
     void parallelWrites() throws Exception {
         CustomWriterRegistry upper = CustomWriterRegistry.create();
