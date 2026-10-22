@@ -499,7 +499,8 @@ public class ValueConverter {
      * Creates a collection instance according to the requested type.
      */
     private Collection<Object> createCollection(Class<?> collectionType) {
-        if (List.class.isAssignableFrom(collectionType)) {
+        // A plain Collection is read as a list: the order of the document is kept
+        if (List.class.isAssignableFrom(collectionType) || collectionType == Collection.class) {
             return new ArrayList<>();
         } else if (Set.class.isAssignableFrom(collectionType)) {
             return new HashSet<>();
