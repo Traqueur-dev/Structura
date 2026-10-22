@@ -11,6 +11,7 @@ import fr.traqueur.structura.references.Reference;
 import fr.traqueur.structura.references.ReferenceRegistry;
 import fr.traqueur.structura.registries.CustomReaderRegistry;
 import fr.traqueur.structura.registries.PolymorphicRegistry;
+import fr.traqueur.structura.types.TypeToken;
 
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
@@ -511,19 +512,16 @@ public class ValueConverter {
      * Extracts the class from a Type (handles Class and ParameterizedType).
      */
     private Class<?> getClassFromType(Type type) {
-        return switch (type) {
-            case Class<?> clazz -> clazz;
-            case ParameterizedType paramType -> (Class<?>) paramType.getRawType();
-            default -> throw new StructuraException("Unsupported type: " + type);
-        };
+        // A type variable is read as its bound: S of Menu<S extends Surface> as a Surface
+        return TypeToken.rawTypeOf(type);
     }
 
     private static Class<?> rawClassOf(Type type) {
-        return switch (type) {
-            case Class<?> clazz -> clazz;
-            case ParameterizedType paramType -> (Class<?>) paramType.getRawType();
-            default -> Object.class;
-        };
+        try {
+            return TypeToken.rawTypeOf(type);
+        } catch (StructuraException e) {
+            return Object.class;
+        }
     }
 
     /**

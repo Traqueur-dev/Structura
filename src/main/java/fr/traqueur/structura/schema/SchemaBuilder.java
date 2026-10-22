@@ -13,6 +13,7 @@ import fr.traqueur.structura.registries.DefaultValueRegistry;
 import fr.traqueur.structura.registries.PolymorphicRegistry;
 import fr.traqueur.structura.schema.Schema.Discriminator;
 import fr.traqueur.structura.schema.Schema.Shape;
+import fr.traqueur.structura.types.TypeToken;
 
 import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.ParameterizedType;
@@ -290,10 +291,10 @@ public final class SchemaBuilder {
     }
 
     private static Class<?> rawClass(Type type) {
-        return switch (type) {
-            case Class<?> clazz -> clazz;
-            case ParameterizedType parameterized -> (Class<?>) parameterized.getRawType();
-            default -> Object.class;
-        };
+        try {
+            return TypeToken.rawTypeOf(type);
+        } catch (StructuraException e) {
+            return Object.class;
+        }
     }
 }
