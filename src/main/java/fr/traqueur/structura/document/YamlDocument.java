@@ -177,7 +177,8 @@ public final class YamlDocument {
     /**
      * Attaches to an error the position its path designates in this document.
      *
-     * <p>An unknown key points at the key itself, any other error at the value. When the path leads
+     * <p>An unknown key, or an error {@link StructuraException#pointAtKey() pointing at its key}, points at
+     * the key itself, any other error at the value. When the path leads
      * to a key that is absent (a missing required key), the error points at the closest section that
      * does exist, which is where the key should be added.</p>
      *
@@ -188,7 +189,7 @@ public final class YamlDocument {
         if (root == null || error.line().isPresent()) {
             return error;
         }
-        Node node = find(error.path().orElse(""), error.kind() == StructuraException.Kind.UNKNOWN_KEY);
+        Node node = find(error.path().orElse(""), error.pointsAtKey());
         Mark mark = node.getStartMark();
         return error.locate(sources.getOrDefault(node, source), mark.getLine() + 1, mark.getColumn() + 1);
     }

@@ -73,7 +73,13 @@ public final class Schema {
         /** In the parent section, with the sub-type's keys there too ({@code @Options(inline = true)}). */
         INLINE,
         /** The key of the value is the sub-type's name: {@code speed: {level: 2}}. */
-        KEY
+        KEY,
+        /**
+         * The sub-type is the one registered key present in the section ({@code @Polymorphic(useKey = true,
+         * inline = true)}): {@code select: {tab: chat}}, or the sub-type's own section when it has a
+         * component of that name ({@code {choice: [a, b], initial: a}}). There is no discriminator key.
+         */
+        PRESENT_KEY
     }
 
     private final String key;

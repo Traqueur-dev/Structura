@@ -46,6 +46,7 @@ public class StructuraException extends RuntimeException {
     private String source;
     private int line = -1;
     private int column = -1;
+    private boolean atKey;
 
     /**
      * Constructs a new StructuraException with the specified detail message.
@@ -127,6 +128,24 @@ public class StructuraException extends RuntimeException {
     }
 
     /**
+     * Makes the position of this error that of the key of its path rather than of its value, as for an
+     * unknown key: {@code 'toggle' and 'select' cannot both be set} points at {@code select:}.
+     *
+     * @return this exception
+     */
+    public StructuraException pointAtKey() {
+        this.atKey = true;
+        return this;
+    }
+
+    /**
+     * @return whether the position of this error is that of the key of its path rather than of its value
+     */
+    public boolean pointsAtKey() {
+        return atKey || kind == Kind.UNKNOWN_KEY;
+    }
+
+    /**
      * @return the category of this error
      */
     public Kind kind() {
@@ -183,8 +202,8 @@ public class StructuraException extends RuntimeException {
             message.append(' ');
         }
         message.append(detail);
-        // An unknown key already names itself and its section
-        if (path != null && kind != Kind.UNKNOWN_KEY) {
+        // An error pointing at a key (an unknown key, two keys set together) already names it and its section
+        if (path != null && !pointsAtKey()) {
             message.append(" (").append(path).append(')');
         }
         return message.toString();
