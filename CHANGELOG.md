@@ -3,6 +3,20 @@
 All notable changes to Structura. Versions follow [semantic versioning](https://semver.org):
 a minor version adds features without breaking existing code.
 
+## 2.11.0 — Collection components, thread-safe writer
+
+### Added
+
+- **A component declared as `Collection<T>` is read**, as a list in the order of the document. It used to fail
+  with `Unsupported collection type: java.util.Collection`, so `@DefaultEmpty Collection<T>` only worked when
+  its key was absent. `saveDefault` gives it an empty list.
+
+### Fixed
+
+- **The writer is safe to use from several threads.** The serializer shared one SnakeYAML `Yaml` instance,
+  which is not thread-safe, while the global writer serves every `Structura.write`: concurrent writes failed
+  with `Nodes must be provided` or produced a wrong file. Each dump now gets its own instance.
+
 ## 2.10.0 — Menus: the key present, empty defaults, generic records
 
 ### Added
