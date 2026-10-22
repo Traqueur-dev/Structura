@@ -632,7 +632,7 @@ public final class TestModels {
         Map<String, ItemMetadata> namedItems
     ) implements Loadable {}
 
-    // Key discriminator WITH inline (for validation error testing)
+    // Key discriminator WITH inline: the sub-type is the registered key present in the section
     @Polymorphic(useKey = true, inline = true)
     public interface ItemMetadataInline extends Loadable {}
 

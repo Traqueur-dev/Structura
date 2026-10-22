@@ -1,7 +1,6 @@
 package fr.traqueur.structura.validation;
 
 import fr.traqueur.structura.annotations.Options;
-import fr.traqueur.structura.annotations.Polymorphic;
 import fr.traqueur.structura.annotations.validation.*;
 import fr.traqueur.structura.api.Loadable;
 import fr.traqueur.structura.conversion.ReadSession;
@@ -216,18 +215,8 @@ public class Validator {
         validatePattern(value, element, path);
         validateNotEmpty(value, element, path);
         validateSize(value, element, path);
-        validatePolymorphic(clazz, path);
     }
 
-    private void validatePolymorphic(Class<?> value, String path) {
-        if (!value.isAnnotationPresent(Polymorphic.class)) return;
-
-        Polymorphic polymorphic = value.getAnnotation(Polymorphic.class);
-        if (polymorphic.inline() && polymorphic.useKey()) {
-            throw new ValidationException(formatMessage("Invalid @Polymorphic configuration: 'inline' and 'useKey' cannot both be true in {path}",
-                    Map.of("path", path)));
-        }
-    }
 
     /**
      * Validates minimum value constraint.

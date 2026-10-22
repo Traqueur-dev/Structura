@@ -7,6 +7,7 @@ import fr.traqueur.structura.annotations.defaults.DefaultReference;
 import fr.traqueur.structura.api.Loadable;
 import fr.traqueur.structura.exceptions.StructuraException;
 import fr.traqueur.structura.mapping.FieldMapper;
+import fr.traqueur.structura.mapping.Polymorphism;
 import fr.traqueur.structura.references.Reference;
 import fr.traqueur.structura.registries.DefaultValueRegistry;
 import fr.traqueur.structura.registries.PolymorphicRegistry;
@@ -161,6 +162,13 @@ public final class SchemaBuilder {
                 schema.remaining = of(typeArgument(component.getGenericType(), 1), null, true, null, null);
                 continue;
             }
+            if (inline && Polymorphism.isKeySelected(type)) {
+                // The registered key present in this section selects the sub-type
+                boolean optional = options.optional();
+                schema.inlinePolymorphic = polymorphic(type, component.getGenericType(), FieldMapper.keyOf(component),
+                        !optional, description(parameter), Discriminator.PRESENT_KEY);
+                continue;
+            }
             if (inline && isPolymorphic(type) && type.getAnnotation(Polymorphic.class).inline()) {
                 schema.inlinePolymorphic = polymorphic(type, component.getGenericType(), FieldMapper.keyOf(component),
                         true, description(parameter), Discriminator.INLINE);
@@ -183,14 +191,14 @@ public final class SchemaBuilder {
             Schema property = of(component.getGenericType(), key, !optional && defaultValue == null, defaultValue,
                     description(parameter));
 
-            if (property.shape() == Shape.POLYMORPHIC && type.getAnnotation(Polymorphic.class).inline()) {
+            if (property.shape() == Shape.POLYMORPHIC && Polymorphism.isInlineDiscriminated(type)) {
                 // @Polymorphic(inline = true): the discriminator sits next to the value, in this section
                 property.placement = Discriminator.PARENT;
                 Schema discriminator = new Schema(property.discriminator, String.class, Shape.ENUM,
                         property.required, null, "The type of '" + key + "'");
                 discriminator.enumValues.addAll(property.subtypes.keySet());
                 schema.properties.add(discriminator);
-            } else if (property.shape() == Shape.POLYMORPHIC && type.getAnnotation(Polymorphic.class).useKey()) {
+            } else if (property.shape() == Shape.POLYMORPHIC && Polymorphism.isKeyDiscriminated(type)) {
                 property.placement = Discriminator.KEY;
             }
             schema.properties.add(property);
@@ -201,8 +209,12 @@ public final class SchemaBuilder {
                                Discriminator placement) {
         Polymorphic annotation = type.getAnnotation(Polymorphic.class);
         Schema schema = new Schema(key, generic, Shape.POLYMORPHIC, required, null, description(type, description));
-        schema.discriminator = annotation.key();
-        schema.placement = placement != null ? placement : annotation.useKey() ? Discriminator.KEY : Discriminator.NESTED;
+        schema.placement = placement != null ? placement
+                : Polymorphism.isKeySelected(type) ? Discriminator.PRESENT_KEY
+                : annotation.useKey() ? Discriminator.KEY
+                : Discriminator.NESTED;
+        // The sub-type of a key-selected value is named by the key present, not by a discriminator key
+        schema.discriminator = schema.placement == Discriminator.PRESENT_KEY ? null : annotation.key();
 
         @SuppressWarnings("unchecked")
         Class<? extends Loadable> polymorphicType = (Class<? extends Loadable>) type;

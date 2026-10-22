@@ -6,6 +6,7 @@ import fr.traqueur.structura.api.Loadable;
 import fr.traqueur.structura.exceptions.StructuraException;
 import fr.traqueur.structura.factory.RecordInstanceFactory;
 import fr.traqueur.structura.mapping.FieldMapper;
+import fr.traqueur.structura.mapping.Polymorphism;
 import fr.traqueur.structura.references.Reference;
 import fr.traqueur.structura.references.ReferenceRegistry;
 import fr.traqueur.structura.registries.CustomReaderRegistry;
@@ -98,6 +99,11 @@ public class ValueConverter {
         if (rawType.isAssignableFrom(value.getClass()) &&
                 !needsSpecialConversion(rawType, genericType)) {
             return value;
+        }
+
+        // @Polymorphic(useKey = true, inline = true): the registered key present in the section is the sub-type
+        if (Polymorphism.isKeySelected(rawType)) {
+            return recordFactory.readKeySelected(value, rawType, prefix, value instanceof Map<?, ?> map && ReadSession.isShared(map));
         }
 
         rawType = this.getClassFromRegistry(rawType, value, prefix);
@@ -589,15 +595,8 @@ public class ValueConverter {
      * @throws StructuraException if both inline and useKey are true
      */
     private boolean isPolymorphicWithKeyAsDiscriminator(Class<?> type) {
-        if (!Loadable.class.isAssignableFrom(type)) {
-            return false;
-        }
-        Polymorphic polymorphic = type.getAnnotation(Polymorphic.class);
-        if (polymorphic == null) {
-            return false;
-        }
-
-        return polymorphic.useKey();
+        // useKey + inline is another form: the sub-type is the key present in the value's own section
+        return Polymorphism.isKeyDiscriminated(type);
     }
 
     /**

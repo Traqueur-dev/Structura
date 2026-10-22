@@ -4,6 +4,7 @@ import fr.traqueur.structura.annotations.Options;
 import fr.traqueur.structura.annotations.Polymorphic;
 import fr.traqueur.structura.api.Loadable;
 import fr.traqueur.structura.mapping.FieldMapper;
+import fr.traqueur.structura.mapping.Polymorphism;
 import fr.traqueur.structura.references.Reference;
 import fr.traqueur.structura.registries.DefaultValueRegistry;
 import fr.traqueur.structura.registries.PolymorphicRegistries;
@@ -216,6 +217,9 @@ public class LoadableSerializer {
                 } else {
                     result.put(key, entries);
                 }
+            } else if (Polymorphism.isKeySelected(type)) {
+                // The key of the sub-type sits next to the other keys, its value under it
+                result.putAll(keySelectedForm(value, type, path));
             } else if (isPolymorphicInterface(type)) {
                 Polymorphic poly = type.getAnnotation(Polymorphic.class);
                 if (poly.inline()) {
@@ -232,6 +236,12 @@ public class LoadableSerializer {
         }
 
         // ── Polymorphic interface ────────────────────────────────────────────
+        // ── @Polymorphic(useKey = true, inline = true): the sub-type's key in the value's own section
+        if (Polymorphism.isKeySelected(type)) {
+            result.put(key, keySelectedForm(value, type, keyPath));
+            return;
+        }
+
         if (isPolymorphicInterface(type)) {
             Polymorphic poly      = type.getAnnotation(Polymorphic.class);
             String      discValue = lookupRegisteredName(value.getClass(), type);
@@ -335,6 +345,15 @@ public class LoadableSerializer {
             }
         }
 
+        // Key-selected list → list of sections holding each sub-type's key
+        if (Polymorphism.isKeySelected(elementRawType)) {
+            List<Object> resultList = new ArrayList<>();
+            for (int i = 0; i < elements.size(); i++) {
+                resultList.add(keySelectedForm(elements.get(i), elementRawType, path + "[" + i + "]"));
+            }
+            return resultList;
+        }
+
         // Standard polymorphic list → list with discriminator inside each entry
         if (isPolymorphicInterface(elementRawType)) {
             Polymorphic  poly       = elementRawType.getAnnotation(Polymorphic.class);
@@ -391,6 +410,16 @@ public class LoadableSerializer {
                 if (e.getValue() == null) { result.put(e.getKey().toString(), null); continue; }
                 Map<String, Object> wrapped = toMap(e.getValue(), path);
                 result.put(e.getKey().toString(), wrapped.values().iterator().next());
+            }
+            return result;
+        }
+
+        // Key-selected map values: each value is a section holding its sub-type's key
+        if (Polymorphism.isKeySelected(valueRawType)) {
+            for (Map.Entry<?, ?> e : map.entrySet()) {
+                String entryPath = join(path, e.getKey().toString());
+                result.put(e.getKey().toString(),
+                        e.getValue() != null ? keySelectedForm(e.getValue(), valueRawType, entryPath) : null);
             }
             return result;
         }
@@ -459,7 +488,41 @@ public class LoadableSerializer {
     }
 
     private boolean isPolymorphicWithUseKey(Class<?> type) {
-        return isPolymorphicInterface(type) && type.getAnnotation(Polymorphic.class).useKey();
+        return isPolymorphicInterface(type) && Polymorphism.isKeyDiscriminated(type);
+    }
+
+    /**
+     * The form of a {@code @Polymorphic(useKey = true, inline = true)} value, symmetric to the reader:
+     * a sub-type with a component named like its key writes its own section ({@code {choice: [a], initial: a}});
+     * any other writes its key, then its value under it — the single value of its only component when that
+     * value is not a section ({@code toggle: view.chat}), its section otherwise ({@code select: {tab: chat}}).
+     */
+    private Map<String, Object> keySelectedForm(Object value, Class<?> polymorphicInterface, String path) {
+        String name = lookupRegisteredName(value.getClass(), polymorphicInterface);
+        RecordComponent[] components = value.getClass().getRecordComponents();
+
+        boolean readsWholeNode = Arrays.stream(components).anyMatch(component -> FieldMapper.keyOf(component).equals(name));
+        if (readsWholeNode) {
+            return toMap(value, path);
+        }
+
+        String valuePath = join(path, name);
+        Map<String, Object> fields = toMap(value, valuePath);
+        Object form = fields;
+        if (components.length == 1 && !isInline(value.getClass(), 0) && fields.size() == 1) {
+            Object single = fields.values().iterator().next();
+            if (single != null && !(single instanceof Map<?, ?>)) {
+                form = single;
+            }
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put(name, form);
+        return result;
+    }
+
+    private static boolean isInline(Class<?> recordClass, int index) {
+        Options options = recordClass.getDeclaredConstructors()[0].getParameters()[index].getAnnotation(Options.class);
+        return options != null && options.inline();
     }
 
     private Class<?> getRawClass(Type type) {

@@ -94,7 +94,18 @@ final class JsonSchemaWriter {
             }
         }
 
-        if (schema.inlinePolymorphic != null) {
+        boolean presentKey = schema.inlinePolymorphic != null
+                && schema.inlinePolymorphic.placement == Discriminator.PRESENT_KEY;
+        if (presentKey) {
+            // One of the registered keys sits in this section, next to the other keys
+            List<Object> branches = presentKeys(schema.inlinePolymorphic, properties);
+            if (!schema.inlinePolymorphic.required) {
+                branches.add(noneOf(schema.inlinePolymorphic));
+            }
+            if (!branches.isEmpty()) {
+                json.put("oneOf", branches);
+            }
+        } else if (schema.inlinePolymorphic != null) {
             // The sub-type's keys sit in this section: one branch per sub-type, each listing them all
             Schema polymorphic = schema.inlinePolymorphic;
             List<Object> branches = new ArrayList<>();
@@ -127,10 +138,55 @@ final class JsonSchemaWriter {
         }
         if (schema.remaining != null) {
             json.put("additionalProperties", toJson(schema.remaining));
-        } else if (schema.inlinePolymorphic == null) {
+        } else if (schema.inlinePolymorphic == null || presentKey) {
             json.put("additionalProperties", false);
         }
         return json;
+    }
+
+    /**
+     * The keys of a {@link Discriminator#PRESENT_KEY key-selected} value: each registered key, with the
+     * value its sub-type reads under it (or the keys of a sub-type reading the whole section), added to
+     * {@code properties}; and one branch per key requiring it, for a {@code oneOf}: exactly one key is set.
+     */
+    private static List<Object> presentKeys(Schema polymorphic, Map<String, Object> properties) {
+        List<Object> branches = new ArrayList<>();
+        for (Map.Entry<String, Schema> subtype : polymorphic.subtypes.entrySet()) {
+            String name = subtype.getKey();
+            Schema section = subtype.getValue();
+            boolean readsWholeSection = section.properties.stream().anyMatch(property -> name.equals(property.key()));
+            if (readsWholeSection) {
+                for (Schema property : section.properties) {
+                    properties.putIfAbsent(property.key(), toJson(property));
+                }
+            } else {
+                properties.put(name, valueUnderKey(section));
+            }
+            branches.add(Map.of("required", List.of(name)));
+        }
+        return branches;
+    }
+
+    /**
+     * What a sub-type reads under its key: its section, or the single value of its only component.
+     */
+    private static Object valueUnderKey(Schema section) {
+        Map<String, Object> object = new LinkedHashMap<>();
+        object.put("type", "object");
+        object.putAll(sectionBody(section));
+        if (section.properties.size() == 1 && section.remaining == null && section.inlinePolymorphic == null) {
+            return Map.of("anyOf", List.of(toJson(section.properties.getFirst()), object));
+        }
+        return object;
+    }
+
+    /**
+     * The branch of an optional key-selected component: none of its keys is set.
+     */
+    private static Map<String, Object> noneOf(Schema polymorphic) {
+        List<Object> anyKey = new ArrayList<>();
+        polymorphic.subtypes.keySet().forEach(name -> anyKey.add(Map.of("required", List.of(name))));
+        return Map.of("not", Map.of("anyOf", anyKey));
     }
 
     private static Map<String, Object> list(Schema schema) {
@@ -187,6 +243,15 @@ final class JsonSchemaWriter {
         Map<String, Object> json = new LinkedHashMap<>();
         json.put("type", "object");
         if (schema.subtypes.isEmpty()) {
+            return json;
+        }
+        if (placement == Discriminator.PRESENT_KEY) {
+            // The value's own section holds exactly one of the registered keys
+            Map<String, Object> properties = new LinkedHashMap<>();
+            List<Object> branches = presentKeys(schema, properties);
+            json.put("properties", properties);
+            json.put("oneOf", branches);
+            json.put("additionalProperties", false);
             return json;
         }
         List<Object> branches = new ArrayList<>();
