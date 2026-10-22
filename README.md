@@ -122,6 +122,16 @@ public record ServerConfig(
 ) implements Loadable {}
 ```
 
+`@DefaultEmpty` makes an absent `List`, `Set`, `Collection` or `Map` empty (and immutable), instead of missing
+or null:
+
+```java
+public record Dialog(@DefaultEmpty List<Body> body, @DefaultEmpty Map<String, Input> inputs) implements Loadable {}
+```
+
+On any other type it is an error: `@DefaultEmpty on Dialog.title: @DefaultEmpty applies to a List, Set,
+Collection or Map, not String`.
+
 ### Custom Field Names
 
 Override automatic kebab-case conversion:
@@ -524,6 +534,72 @@ For a `Map<String, ItemMeta>`, the existing map key doubles as the discriminator
 - **Type safety**: Compile-time guarantees that implementations match the interface
 - **Error handling**: Clear messages showing available types when resolution fails
 - **Default values**: All `@Default*` annotations work in polymorphic implementations
+
+#### The sub-type is the key present (`useKey` + `inline`)
+
+With `@Polymorphic(useKey = true, inline = true)`, there is no discriminator key: exactly **one of the registered
+names** is present in the section, and it selects the sub-type.
+
+```java
+@Polymorphic(useKey = true, inline = true)
+public sealed interface Control extends Loadable permits Toggle, Select, Step {}
+public record Toggle(String target) implements Control {}
+public record Select(@Options(inline = true) Map<String, String> choice) implements Control {}
+public record Step(@Options(inline = true) Map<String, Integer> by) implements Control {}
+
+PolymorphicRegistry.create(Control.class, r -> {
+    r.register("toggle", Toggle.class); r.register("select", Select.class); r.register("step", Step.class);
+});
+
+public record Button(String label, @Options(optional = true) String when,
+                     @Options(inline = true, optional = true) Control control) implements Loadable {}
+```
+
+```yaml
+buttons:
+  - { label: "Players", when: tab=chat, toggle: view.chat-players }  # Toggle[target=view.chat-players]
+  - { label: "Chat", select: { tab: chat } }                          # Select[choice={tab=chat}]
+  - { label: "+1", step: { quantity: 1 } }                            # Step[by={quantity=1}]
+  - { label: "Decor" }                                                # control = null (optional)
+```
+
+Which node the sub-type reads:
+
+- **a sub-type with a component named like the key reads the whole section** — handy for a map value:
+
+  ```java
+  @Polymorphic(useKey = true, inline = true)
+  public sealed interface StateDef extends Loadable permits Choice, Range, Flag {}
+  public record Choice(List<String> choice, @Options(optional = true) String initial) implements StateDef {}
+  public record Range(List<Integer> range, @DefaultInt(0) int initial) implements StateDef {}
+  public record Flag(boolean flag) implements StateDef {}
+
+  public record Menu(Map<String, StateDef> state) implements Loadable {}
+  ```
+
+  ```yaml
+  state:
+    tab:      { choice: [chat, notifications], initial: chat }   # Choice
+    quantity: { range: [1, 64], initial: 1 }                     # Range
+    preview:  { flag: false }                                    # Flag
+  ```
+
+- **any other sub-type reads the value of the key**: a section (`select: { tab: chat }`), or a single value read
+  into its only component (`toggle: view.chat-players` for `Toggle(String target)`). A sub-type with several
+  components, or with an inline one, refuses a single value.
+
+On an inline component the key sits next to the parent's keys; anywhere else (a map value, a list element, a
+plain component) the value's own section holds it. The errors:
+
+```
+1:1: 'control' is required but not provided: set one of toggle, select, step (control)
+2:44: 'toggle' and 'select' cannot both be set under 'buttons[0]': a Control is one of toggle, select, step
+2:8: 'creak' cannot be read as a Sound, which reads name, volume: write a section under 'sound' (sound)
+2:25: unknown key 'toogle' under 'buttons[0]' (did you mean 'toggle'?)        # strict mode
+```
+
+An optional inline component with no registered key is `null`. It cannot live next to an inline catch-all map.
+The writer writes the sub-type's key, then its value; the schema offers exactly one of the keys.
 
 #### Use Cases
 
@@ -1397,7 +1473,8 @@ Class<? super T> getRawType()
         inline = false,    // Default: false - discriminator inside field value
                           // Set to true to place discriminator at parent level
         useKey = false     // Default: false - when true, the discriminator value
-                          // becomes the YAML key instead of a separate field
+                          // becomes the YAML key instead of a separate field;
+                          // with inline = true, the sub-type is the registered key present
 )
 ```
 
@@ -1419,7 +1496,11 @@ Class<? super T> getRawType()
 @DefaultLong(1000L)
 @DefaultDouble(3.14)
 @DefaultBool(true)
+@DefaultEmpty            // an absent List, Set, Collection or Map is empty
 ```
+
+A record can be generic: a component whose type is a type variable is read as its bound
+(`record Menu<S extends Surface>(String id, @Options(inline = true) S surface)` reads `surface` as a `Surface`).
 
 ## 🚨 Error Handling
 
