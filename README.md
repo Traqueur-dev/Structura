@@ -2,7 +2,7 @@
 
 > A modern, type-safe YAML configuration library for Java that leverages records and annotations for seamless configuration management.
 
-[![Structura in 20 seconds](.github/assets/structura-launch.jpg)](.github/assets/structura-launch.mp4)
+https://github.com/user-attachments/assets/2dcaa298-9e4f-4838-9e81-c4cf4b6e0e40
 
 ## ✨ Features
 
